@@ -1,0 +1,41 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "mcphero"
+version = "0.0.1"
+authors = [
+  { name="Stepan Filonov", email="stepanfilonov@gmail.com" },
+]
+description = "Simple and Fast framework to use MCP servers natively with AI clients."
+readme = "README.md"
+requires-python = ">=3.9"
+classifiers = [
+    "Programming Language :: Python :: 3",
+    "Operating System :: OS Independent",
+]
+license = "MIT"
+license-files = ["LICEN[CS]E*"]
+keywords = [
+    "mcp",
+    "openai",
+    "mcp",
+    "llm clients",
+    "mcp client",
+    "tool calling",
+]
+
+dependencies = [
+    "httpx",
+    "openai",
+]
+
+[project.optional-dependencies]
+google-genai = ["google-genai"]
+
+[project.urls]
+Homepage = "https://github.com/stepacool/mcphero"
+Issues = "https://github.com/stepacool/mcphero/issues"
+Website = "https://mcphero.app"
+Documentation = "https://mcphero.app/docs"
