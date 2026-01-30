@@ -66,7 +66,7 @@ class MCPToolAdapterGemini(BaseAdapter):
         Returns:
             List of FunctionDeclaration objects.
         """
-        mcp_tools = await self.make_request("/tools")
+        mcp_tools = await self.get_mcp_tools()
 
         declarations: list[types.FunctionDeclaration] = []
         for tool in mcp_tools:
@@ -129,11 +129,7 @@ class MCPToolAdapterGemini(BaseAdapter):
             call_id = getattr(fc, "id", None)
 
             try:
-                result = await self.make_request(
-                    f"/tools/{tool_name}/call",
-                    method="POST",
-                    data={"arguments": arguments},
-                )
+                result = await self.call_mcp_tool(tool_name, arguments)
 
                 function_response = types.FunctionResponse(
                     name=tool_name,
@@ -223,11 +219,7 @@ class MCPToolAdapterGemini(BaseAdapter):
             arguments = fc.args if fc.args else {}
 
             try:
-                result = await self.make_request(
-                    f"/tools/{tool_name}/call",
-                    method="POST",
-                    data={"arguments": arguments},
-                )
+                result = await self.call_mcp_tool(tool_name, arguments)
 
                 part = types.Part.from_function_response(
                     name=tool_name,

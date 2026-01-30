@@ -77,7 +77,7 @@ class MCPToolAdapterOpenAI(BaseAdapter):
                 tools=tools,
             )
         """
-        mcp_tools = await self.make_request("/tools")
+        mcp_tools = await self.get_mcp_tools()
 
         openai_tools: list[ChatCompletionToolParam] = []
         for tool in mcp_tools:
@@ -154,11 +154,7 @@ class MCPToolAdapterOpenAI(BaseAdapter):
                 continue
 
             try:
-                result = await self.make_request(
-                    f"/tools/{tool_name}/call",
-                    method="POST",
-                    data={"arguments": arguments},
-                )
+                result = await self.call_mcp_tool(tool_name, arguments)
 
                 results.append(
                     {

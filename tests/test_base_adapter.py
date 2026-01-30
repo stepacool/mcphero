@@ -41,7 +41,7 @@ class TestMakeRequest:
         )
 
         adapter = BaseAdapter(base_url)
-        result = await adapter.make_request("/tools")
+        result = await adapter._make_request("/tools")
         assert result == expected
 
     @respx.mock
@@ -52,7 +52,7 @@ class TestMakeRequest:
         )
 
         adapter = BaseAdapter(base_url)
-        result = await adapter.make_request(
+        result = await adapter._make_request(
             "/tools/test/call", method="POST", data={"arguments": {"q": "hello"}}
         )
         assert result == expected
@@ -62,7 +62,7 @@ class TestMakeRequest:
     async def test_unsupported_method_raises_value_error(self, base_url):
         adapter = BaseAdapter(base_url)
         with pytest.raises(ValueError, match="Unsupported HTTP method: DELETE"):
-            await adapter.make_request("/tools", method="DELETE")
+            await adapter._make_request("/tools", method="DELETE")
 
     @respx.mock
     async def test_http_error_raises(self, base_url):
@@ -72,7 +72,7 @@ class TestMakeRequest:
 
         adapter = BaseAdapter(base_url)
         with pytest.raises(httpx.HTTPStatusError):
-            await adapter.make_request("/tools")
+            await adapter._make_request("/tools")
 
     @respx.mock
     async def test_get_passes_params(self, base_url):
@@ -81,6 +81,6 @@ class TestMakeRequest:
         )
 
         adapter = BaseAdapter(base_url)
-        result = await adapter.make_request("/search", params={"q": "test"})
+        result = await adapter._make_request("/search", params={"q": "test"})
         assert result == {"results": []}
         assert route.called
