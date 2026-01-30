@@ -7,16 +7,17 @@ and processes Gemini's function calls to HTTP requests to the MCP server.
 Requires the optional `google-genai` dependency:
     pip install mcphero[google-genai]
 """
+
 from __future__ import annotations
 
 try:
-    from google.genai import types
+    from google.genai import types  # pyright: ignore[reportMissingImports]
 except ImportError as e:
     from mcphero.exceptions import INSTALL_GOOGLE_GENAI
+
     raise ImportError(INSTALL_GOOGLE_GENAI) from e
 
 import httpx
-from google.genai import types
 
 from mcphero.adapters.base_adapter import BaseAdapter
 
@@ -72,10 +73,13 @@ class MCPToolAdapterGemini(BaseAdapter):
             declaration = types.FunctionDeclaration(
                 name=tool["name"],
                 description=tool.get("description", ""),
-                parameters=tool.get("inputSchema", {
-                    "type": "object",
-                    "properties": {},
-                }),
+                parameters=tool.get(
+                    "inputSchema",
+                    {
+                        "type": "object",
+                        "properties": {},
+                    },
+                ),
             )
             declarations.append(declaration)
 
@@ -128,21 +132,25 @@ class MCPToolAdapterGemini(BaseAdapter):
                 result = await self.make_request(
                     f"/tools/{tool_name}/call",
                     method="POST",
-                    data={"arguments": arguments}
+                    data={"arguments": arguments},
                 )
 
                 function_response = types.FunctionResponse(
                     name=tool_name,
-                    response={"result": result} if not isinstance(result, dict) else result,
+                    response={"result": result}
+                    if not isinstance(result, dict)
+                    else result,
                     id=call_id,
                 )
 
                 content = types.Content(
                     role="user",
-                    parts=[types.Part.from_function_response(
-                        name=function_response.name,
-                        response=function_response.response,
-                    )]
+                    parts=[
+                        types.Part.from_function_response(
+                            name=function_response.name,
+                            response=function_response.response,
+                        )
+                    ],
                 )
                 results.append(content)
 
@@ -155,10 +163,12 @@ class MCPToolAdapterGemini(BaseAdapter):
                     )
                     content = types.Content(
                         role="user",
-                        parts=[types.Part.from_function_response(
-                            name=function_response.name,
-                            response=function_response.response,
-                        )]
+                        parts=[
+                            types.Part.from_function_response(
+                                name=function_response.name,
+                                response=function_response.response,
+                            )
+                        ],
                     )
                     results.append(content)
 
@@ -171,10 +181,12 @@ class MCPToolAdapterGemini(BaseAdapter):
                     )
                     content = types.Content(
                         role="user",
-                        parts=[types.Part.from_function_response(
-                            name=function_response.name,
-                            response=function_response.response,
-                        )]
+                        parts=[
+                            types.Part.from_function_response(
+                                name=function_response.name,
+                                response=function_response.response,
+                            )
+                        ],
                     )
                     results.append(content)
 
@@ -214,12 +226,14 @@ class MCPToolAdapterGemini(BaseAdapter):
                 result = await self.make_request(
                     f"/tools/{tool_name}/call",
                     method="POST",
-                    data={"arguments": arguments}
+                    data={"arguments": arguments},
                 )
 
                 part = types.Part.from_function_response(
                     name=tool_name,
-                    response={"result": result} if not isinstance(result, dict) else result,
+                    response={"result": result}
+                    if not isinstance(result, dict)
+                    else result,
                 )
                 results.append(part)
 
@@ -258,5 +272,5 @@ class MCPToolAdapterGemini(BaseAdapter):
         """
         return types.Content(
             role="user",
-            parts=[types.Part.from_function_response(name=name, response=response)]
+            parts=[types.Part.from_function_response(name=name, response=response)],
         )

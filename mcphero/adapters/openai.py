@@ -4,6 +4,7 @@ MCP Tool Adapter for OpenAI.
 This adapter converts remote MCP server tools to OpenAI-compatible tool definitions
 and processes OpenAI's tool calls to HTTP requests to the MCP server.
 """
+
 from __future__ import annotations
 
 import json
@@ -80,24 +81,29 @@ class MCPToolAdapterOpenAI(BaseAdapter):
 
         openai_tools: list[ChatCompletionToolParam] = []
         for tool in mcp_tools:
-            openai_tools.append({
-                "type": "function",
-                "function": {
-                    "name": tool["name"],
-                    "description": tool.get("description", ""),
-                    "parameters": tool.get("inputSchema", {
-                        "type": "object",
-                        "properties": {},
-                    }),
+            openai_tools.append(
+                {
+                    "type": "function",
+                    "function": {
+                        "name": tool["name"],
+                        "description": tool.get("description", ""),
+                        "parameters": tool.get(
+                            "inputSchema",
+                            {
+                                "type": "object",
+                                "properties": {},
+                            },
+                        ),
+                    },
                 }
-            })
+            )
 
         return openai_tools
 
     async def process_tool_calls(
-            self,
-            tool_calls: list[ChatCompletionMessageToolCall],
-            return_errors: bool = True,
+        self,
+        tool_calls: list[ChatCompletionMessageToolCall],
+        return_errors: bool = True,
     ) -> list[ChatCompletionToolMessageParam]:
         """
         Process OpenAI's tool_calls by invoking the tools via HTTP.
@@ -136,40 +142,56 @@ class MCPToolAdapterOpenAI(BaseAdapter):
                 arguments = json.loads(tool_call.function.arguments)
             except json.JSONDecodeError:
                 if return_errors:
-                    results.append({
-                        "tool_call_id": tool_call.id,
-                        "role": "tool",
-                        "content": json.dumps({"error": "Failed to parse tool arguments"})
-                    })
+                    results.append(
+                        {
+                            "tool_call_id": tool_call.id,
+                            "role": "tool",
+                            "content": json.dumps(
+                                {"error": "Failed to parse tool arguments"}
+                            ),
+                        }
+                    )
                 continue
 
             try:
                 result = await self.make_request(
                     f"/tools/{tool_name}/call",
                     method="POST",
-                    data={"arguments": arguments}
+                    data={"arguments": arguments},
                 )
 
-                results.append({
-                    "tool_call_id": tool_call.id,
-                    "role": "tool",
-                    "content": json.dumps(result) if not isinstance(result, str) else result
-                })
+                results.append(
+                    {
+                        "tool_call_id": tool_call.id,
+                        "role": "tool",
+                        "content": json.dumps(result)
+                        if not isinstance(result, str)
+                        else result,
+                    }
+                )
 
             except httpx.HTTPError as e:
                 if return_errors:
-                    results.append({
-                        "tool_call_id": tool_call.id,
-                        "role": "tool",
-                        "content": json.dumps({"error": f"HTTP error calling tool: {str(e)}"})
-                    })
+                    results.append(
+                        {
+                            "tool_call_id": tool_call.id,
+                            "role": "tool",
+                            "content": json.dumps(
+                                {"error": f"HTTP error calling tool: {str(e)}"}
+                            ),
+                        }
+                    )
 
             except Exception as e:
                 if return_errors:
-                    results.append({
-                        "tool_call_id": tool_call.id,
-                        "role": "tool",
-                        "content": json.dumps({"error": f"Unexpected error: {str(e)}"})
-                    })
+                    results.append(
+                        {
+                            "tool_call_id": tool_call.id,
+                            "role": "tool",
+                            "content": json.dumps(
+                                {"error": f"Unexpected error: {str(e)}"}
+                            ),
+                        }
+                    )
 
         return results

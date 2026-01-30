@@ -1,8 +1,9 @@
-import abc
+from __future__ import annotations
+
+import httpx
 
 
-class BaseAdapter(abc.ABC):
-
+class BaseAdapter:
     def __init__(
         self,
         base_url: str,

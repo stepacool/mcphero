@@ -1,6 +1,3 @@
-
-
-
 class MCPHeroException(Exception):
     """Base MCPHero Exception class"""
 

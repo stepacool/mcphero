@@ -5,25 +5,29 @@ build-backend = "hatchling.build"
 [project]
 name = "mcphero"
 version = "0.0.1"
-authors = [
-  { name="Stepan Filonov", email="stepanfilonov@gmail.com" },
-]
-description = "Simple and Fast framework to use MCP servers natively with AI clients."
+description = "Simple and fast framework to use MCP servers natively with AI clients."
 readme = "README.md"
 requires-python = ">=3.9"
 classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Programming Language :: Python",
     "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3 :: Only",
+    "Programming Language :: Python :: 3.9",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: Implementation :: CPython",
+    "License :: OSI Approved :: MIT License",
     "Operating System :: OS Independent",
+    "Typing :: Typed",
+    "Intended Audience :: Developers",
+    "Topic :: Software Development :: Libraries :: Python Modules",
+    "Topic :: System :: Networking",
+    "Framework :: AsyncIO",
 ]
-license = "MIT"
-license-files = ["LICEN[CS]E*"]
-keywords = [
-    "mcp",
-    "openai",
-    "mcp",
-    "llm clients",
-    "mcp client",
-    "tool calling",
+keywords = ["mcp", "openai", "llm clients", "mcp client", "tool calling"]
+authors = [
+    { name="Stepan Filonov", email="stepanfilonov@gmail.com" },
 ]
 
 dependencies = [
@@ -34,8 +38,52 @@ dependencies = [
 [project.optional-dependencies]
 google-genai = ["google-genai"]
 
+[dependency-groups]
+lint = ["ruff", "pyright"]
+
+test-core = [
+    "pytest",
+    "pytest-asyncio",
+    "respx",
+]
+
+testing = [
+    "pytest",
+    "pytest-asyncio",
+    "respx",
+]
+
+dev = [
+    "pre-commit",
+    "detect-secrets",
+]
+
 [project.urls]
 Homepage = "https://github.com/stepacool/mcphero"
+Documentation = "https://mcphero.app/docs"
 Issues = "https://github.com/stepacool/mcphero/issues"
 Website = "https://mcphero.app"
-Documentation = "https://mcphero.app/docs"
+
+# =========================
+# Pytest Config
+# =========================
+[tool.pytest.ini_options]
+minversion = "7.0"
+asyncio_mode = "auto"
+timeout = 30
+addopts = "--strict-markers --strict-config -q -m 'not slow'"
+testpaths = ["tests"]
+markers = ["slow", "all", "benchmark"]
+
+# =========================
+# Coverage Config
+# =========================
+[tool.coverage.run]
+branch = true
+parallel = true
+source = ["mcphero", "tests"]
+plugins = ["covdefaults"]
+
+[tool.coverage.report]
+show_missing = true
+skip_empty = true
