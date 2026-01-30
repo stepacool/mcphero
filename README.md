@@ -1,6 +1,16 @@
 # MCPHero - MCP as tools / MCP as functions
 
-Simple and fast framework to use MCP as tools / functions in native AI libraries
+Library to use MCP as tools / functions in native AI libraries
+
+## Inspiration
+
+Everyone uses MCP now, but many still use old-school AI clients with no MCP support. These client libraries like `openai` or `google-genai` only have tool/function calls support.
+This project is created to easily connect MCP servers to these libs as tools.
+
+## Concept
+Two main flows:
+1) `list_tools` - call the MCP server over http to get the tool definitions, then map them to AI library tool definitions
+2) `process_tool_calls' - get the AI library's tool_calls, parse them, send the requests to mcp servers, return results
 
 ## Installation
 
@@ -172,3 +182,5 @@ results = await adapter.process_tool_calls(tool_calls, return_errors=False)
 ## License
 
 MIT
+
+# Need a custom MCP server? Or a good, no bloat MCP server? Visit [MCPHero](https://mcphero.app) and create one!
