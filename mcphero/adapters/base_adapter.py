@@ -39,7 +39,7 @@ class BaseAdapter:
 
     async def get_mcp_tools(self) -> list[dict] | dict:
         return await self._make_request(
-            "",
+            "/",
             "POST",
             data={
                 "method": "tools/list",
@@ -49,7 +49,7 @@ class BaseAdapter:
 
     async def call_mcp_tool(self, tool_name: str, arguments: dict) -> list | dict:
         return await self._make_request(
-            "",
+            "/",
             "POST",
             data={
                 "method": "tools/call",
