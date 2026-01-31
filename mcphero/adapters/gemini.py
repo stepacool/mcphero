@@ -69,7 +69,7 @@ class MCPToolAdapterGemini(BaseAdapter):
         mcp_tools = await self.get_mcp_tools()
 
         declarations: list[types.FunctionDeclaration] = []
-        for tool in mcp_tools:
+        for tool in mcp_tools["result"]["tools"]:
             declaration = types.FunctionDeclaration(
                 name=tool["name"],
                 description=tool.get("description", ""),
@@ -121,6 +121,8 @@ class MCPToolAdapterGemini(BaseAdapter):
                 contents.append(response.candidates[0].content)  # Model's function call
                 contents.extend(results)  # Function responses
         """
+        if not function_calls:
+            return []
         results: list[types.Content] = []
 
         for fc in function_calls:
@@ -212,6 +214,8 @@ class MCPToolAdapterGemini(BaseAdapter):
             # Combine into single Content:
             contents.append(types.Content(role="user", parts=parts))
         """
+        if not function_calls:
+            return []
         results: list[types.Part] = []
 
         for fc in function_calls:

@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import uuid
+
 import httpx
 
 
@@ -21,11 +23,12 @@ class BaseAdapter:
         method: str = "GET",
         data: dict | None = None,
         params: dict | None = None,
-    ) -> dict | list:
+    ) -> dict:
+        headers = {"Accept": "application/json, text/event-stream", **self.headers}
         async with httpx.AsyncClient(
             base_url=self.base_url,
             timeout=self.timeout,
-            headers=self.headers,
+            headers=headers,
         ) as client:
             if method.upper() == "GET":
                 response = await client.get(endpoint, params=params)
@@ -37,21 +40,25 @@ class BaseAdapter:
             response.raise_for_status()
             return response.json()
 
-    async def get_mcp_tools(self) -> list[dict] | dict:
+    async def get_mcp_tools(self) -> dict:
         return await self._make_request(
-            "/",
+            "",
             "POST",
             data={
+                "id": str(uuid.uuid4()),
+                "jsonrpc": "2.0",
                 "method": "tools/list",
                 "params": {},
             },
         )
 
-    async def call_mcp_tool(self, tool_name: str, arguments: dict) -> list | dict:
+    async def call_mcp_tool(self, tool_name: str, arguments: dict) -> dict:
         return await self._make_request(
-            "/",
+            "",
             "POST",
             data={
+                "id": str(uuid.uuid4()),
+                "jsonrpc": "2.0",
                 "method": "tools/call",
                 "params": {
                     "name": tool_name,

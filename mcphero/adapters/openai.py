@@ -80,7 +80,7 @@ class MCPToolAdapterOpenAI(BaseAdapter):
         mcp_tools = await self.get_mcp_tools()
 
         openai_tools: list[ChatCompletionToolParam] = []
-        for tool in mcp_tools:
+        for tool in mcp_tools["result"]["tools"]:
             openai_tools.append(
                 {
                     "type": "function",
@@ -133,6 +133,8 @@ class MCPToolAdapterOpenAI(BaseAdapter):
                 messages.append(response.choices[0].message)
                 messages.extend(tool_results)
         """
+        if not tool_calls:
+            return []
         results: list[ChatCompletionToolMessageParam] = []
 
         for tool_call in tool_calls:
