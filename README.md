@@ -10,7 +10,7 @@ This project is created to easily connect MCP servers to these libs as tools.
 ## Concept
 Two main flows:
 1) `list_tools` - call the MCP server over http to get the tool definitions, then map them to AI library tool definitions
-2) `process_tool_calls' - get the AI library's tool_calls, parse them, send the requests to mcp servers, return results
+2) `process_tool_calls` - get the AI library's tool_calls, parse them, send the requests to mcp servers, return results
 
 ## Installation
 
