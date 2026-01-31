@@ -4,6 +4,16 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](http://keepachangelog.com/)
 and this project adheres to [Semantic Versioning](http://semver.org/).
 
+
+## [0.2.1] - 2026-02-01
+
+### Added
+### Changed
+
+### Fixed
+   - Fix trailing slash issues due to `httpx's` handling of `base_url`. Some MCP servers wouldn't work after a 307 trailing slash redirect due to headers strip or http method change. For example, Digital Ocean deployments are like that.
+
+
 ## [0.2.0] - 2026-02-01
 
 ### Added

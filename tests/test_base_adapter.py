@@ -47,15 +47,15 @@ class TestBaseAdapterInit:
 
     def test_default_init_mode_is_auto(self, base_url):
         adapter = BaseAdapter(base_url)
-        assert adapter.init_mode == InitMode.AUTO
+        assert adapter.init_mode == InitMode.auto
 
     def test_accepts_string_init_mode(self, base_url):
         adapter = BaseAdapter(base_url, init_mode="on_fail")
-        assert adapter.init_mode == InitMode.ON_FAIL
+        assert adapter.init_mode == InitMode.on_fail
 
     def test_accepts_enum_init_mode(self, base_url):
-        adapter = BaseAdapter(base_url, init_mode=InitMode.NONE)
-        assert adapter.init_mode == InitMode.NONE
+        adapter = BaseAdapter(base_url, init_mode=InitMode.none)
+        assert adapter.init_mode == InitMode.none
 
 
 class TestInitialize:
@@ -70,7 +70,7 @@ class TestInitialize:
                 "serverInfo": {"name": "test-server", "version": "1.0"},
             },
         }
-        init_route = respx.post(f"{base_url}/").mock(
+        init_route = respx.post(base_url).mock(
             side_effect=[
                 httpx.Response(200, json=init_result, headers={"Mcp-Session-Id": "srv-session-123"}),
                 httpx.Response(202),
@@ -103,7 +103,7 @@ class TestInitialize:
             "id": "1",
             "result": {"protocolVersion": PROTOCOL_VERSION},
         }
-        respx.post(f"{base_url}/").mock(
+        respx.post(base_url).mock(
             side_effect=[
                 httpx.Response(200, json=init_result, headers={"Mcp-Session-Id": "my-session-42"}),
                 httpx.Response(202),
@@ -122,7 +122,7 @@ class TestInitialize:
             "id": "1",
             "result": {"protocolVersion": PROTOCOL_VERSION},
         }
-        route = respx.post(f"{base_url}/").mock(
+        route = respx.post(base_url).mock(
             side_effect=[
                 httpx.Response(200, json=init_result, headers={"Mcp-Session-Id": "sess-1"}),
                 httpx.Response(202),
@@ -148,7 +148,7 @@ class TestInitialize:
             "id": "1",
             "result": {"protocolVersion": PROTOCOL_VERSION},
         }
-        route = respx.post(f"{base_url}/").mock(
+        route = respx.post(base_url).mock(
             side_effect=[
                 httpx.Response(200, json=init_result, headers={"Mcp-Session-Id": "sess-abc"}),
                 httpx.Response(202),
@@ -168,7 +168,7 @@ class TestInitialize:
             "id": "1",
             "result": {"protocolVersion": PROTOCOL_VERSION},
         }
-        route = respx.post(f"{base_url}/").mock(
+        route = respx.post(base_url).mock(
             side_effect=[
                 httpx.Response(200, json=init_result, headers={"Mcp-Session-Id": "sess-1"}),
                 httpx.Response(202),
@@ -190,7 +190,7 @@ class TestInitialize:
             "id": "1",
             "result": {"protocolVersion": PROTOCOL_VERSION},
         }
-        respx.post(f"{base_url}/").mock(
+        respx.post(base_url).mock(
             side_effect=[
                 httpx.Response(200, json=init_result),
                 httpx.Response(202),
@@ -210,7 +210,7 @@ class TestInitialize:
             "id": "1",
             "result": {"protocolVersion": "2024-11-05"},
         }
-        respx.post(f"{base_url}/").mock(
+        respx.post(base_url).mock(
             side_effect=[
                 httpx.Response(200, json=init_result),
                 httpx.Response(202),
@@ -225,65 +225,40 @@ class TestInitialize:
 
 class TestMakeRequest:
     @respx.mock
-    async def test_get_returns_parsed_json(self, base_url):
-        expected = [{"name": "tool1"}]
-        respx.get(f"{base_url}/tools").mock(
-            return_value=httpx.Response(200, json=expected)
-        )
-
-        adapter = BaseAdapter(base_url)
-        result = await adapter._make_request("/tools")
-        assert result == expected
-
-    @respx.mock
-    async def test_post_sends_json_body(self, base_url):
-        expected = {"result": "ok"}
-        route = respx.post(f"{base_url}/tools/test/call").mock(
+    async def test_post_returns_parsed_json(self, base_url):
+        expected = {"jsonrpc": "2.0", "id": "1", "result": {"tools": []}}
+        respx.post(base_url).mock(
             return_value=httpx.Response(200, json=expected)
         )
 
         adapter = BaseAdapter(base_url)
         result = await adapter._make_request(
-            "/tools/test/call", method="POST", data={"arguments": {"q": "hello"}}
+            {"id": "1", "jsonrpc": "2.0", "method": "tools/list", "params": {}}
         )
         assert result == expected
-        assert route.called
-
-    @respx.mock
-    async def test_unsupported_method_raises_value_error(self, base_url):
-        adapter = BaseAdapter(base_url)
-        with pytest.raises(ValueError, match="Unsupported HTTP method: DELETE"):
-            await adapter._make_request("/tools", method="DELETE")
 
     @respx.mock
     async def test_http_error_raises(self, base_url):
-        respx.get(f"{base_url}/tools").mock(
+        respx.post(base_url).mock(
             return_value=httpx.Response(500, text="Internal Server Error")
         )
 
         adapter = BaseAdapter(base_url)
         with pytest.raises(httpx.HTTPStatusError):
-            await adapter._make_request("/tools")
-
-    @respx.mock
-    async def test_get_passes_params(self, base_url):
-        route = respx.get(f"{base_url}/search", params={"q": "test"}).mock(
-            return_value=httpx.Response(200, json={"results": []})
-        )
-
-        adapter = BaseAdapter(base_url)
-        result = await adapter._make_request("/search", params={"q": "test"})
-        assert result == {"results": []}
-        assert route.called
+            await adapter._make_request(
+                {"id": "1", "jsonrpc": "2.0", "method": "tools/list", "params": {}}
+            )
 
     @respx.mock
     async def test_no_session_id_header_before_init(self, base_url):
-        route = respx.get(f"{base_url}/tools").mock(
-            return_value=httpx.Response(200, json=[])
+        route = respx.post(base_url).mock(
+            return_value=httpx.Response(200, json={"jsonrpc": "2.0", "id": "1", "result": {}})
         )
 
         adapter = BaseAdapter(base_url)
-        await adapter._make_request("/tools")
+        await adapter._make_request(
+            {"id": "1", "jsonrpc": "2.0", "method": "tools/list", "params": {}}
+        )
 
         request = route.calls[0].request
         assert "Mcp-Session-Id" not in request.headers
@@ -295,7 +270,7 @@ class TestMakeRequest:
             "id": "1",
             "result": {"protocolVersion": PROTOCOL_VERSION},
         }
-        respx.post(f"{base_url}/").mock(
+        respx.post(base_url).mock(
             side_effect=[
                 httpx.Response(200, json=init_result, headers={"Mcp-Session-Id": "sess-xyz"}),
                 httpx.Response(202),
@@ -307,11 +282,13 @@ class TestMakeRequest:
 
         # Now mock a subsequent request
         respx.reset()
-        route = respx.get(f"{base_url}/tools").mock(
-            return_value=httpx.Response(200, json=[])
+        route = respx.post(base_url).mock(
+            return_value=httpx.Response(200, json={"jsonrpc": "2.0", "id": "2", "result": {}})
         )
 
-        await adapter._make_request("/tools")
+        await adapter._make_request(
+            {"id": "2", "jsonrpc": "2.0", "method": "tools/list", "params": {}}
+        )
 
         request = route.calls[0].request
         assert request.headers.get("Mcp-Session-Id") == "sess-xyz"
@@ -323,7 +300,7 @@ class TestMakeRequest:
             "id": "1",
             "result": {"protocolVersion": "2024-11-05"},
         }
-        respx.post(f"{base_url}/").mock(
+        respx.post(base_url).mock(
             side_effect=[
                 httpx.Response(200, json=init_result),
                 httpx.Response(202),
@@ -334,11 +311,13 @@ class TestMakeRequest:
         await adapter.initialize()
 
         respx.reset()
-        route = respx.get(f"{base_url}/tools").mock(
-            return_value=httpx.Response(200, json=[])
+        route = respx.post(base_url).mock(
+            return_value=httpx.Response(200, json={"jsonrpc": "2.0", "id": "2", "result": {}})
         )
 
-        await adapter._make_request("/tools")
+        await adapter._make_request(
+            {"id": "2", "jsonrpc": "2.0", "method": "tools/list", "params": {}}
+        )
 
         request = route.calls[0].request
         assert request.headers.get("MCP-Protocol-Version") == "2024-11-05"
@@ -357,7 +336,7 @@ class TestInitModeAuto:
             "id": "2",
             "result": {"tools": []},
         }
-        route = respx.post(f"{base_url}/").mock(
+        route = respx.post(base_url).mock(
             side_effect=[
                 # initialize request
                 httpx.Response(200, json=init_result, headers={"Mcp-Session-Id": "s1"}),
@@ -368,7 +347,7 @@ class TestInitModeAuto:
             ]
         )
 
-        adapter = BaseAdapter(base_url, init_mode=InitMode.AUTO)
+        adapter = BaseAdapter(base_url, init_mode=InitMode.auto)
         result = await adapter.get_mcp_tools()
 
         assert result == tools_result
@@ -387,7 +366,7 @@ class TestInitModeAuto:
             "id": "2",
             "result": {"content": [{"type": "text", "text": "hello"}]},
         }
-        route = respx.post(f"{base_url}/").mock(
+        route = respx.post(base_url).mock(
             side_effect=[
                 httpx.Response(200, json=init_result, headers={"Mcp-Session-Id": "s1"}),
                 httpx.Response(202),
@@ -395,7 +374,7 @@ class TestInitModeAuto:
             ]
         )
 
-        adapter = BaseAdapter(base_url, init_mode=InitMode.AUTO)
+        adapter = BaseAdapter(base_url, init_mode=InitMode.auto)
         result = await adapter.call_mcp_tool("test_tool", {"arg": "val"})
 
         assert result == call_result
@@ -410,11 +389,11 @@ class TestInitModeOnFail:
             "id": "2",
             "result": {"tools": []},
         }
-        route = respx.post(f"{base_url}/").mock(
+        route = respx.post(base_url).mock(
             return_value=httpx.Response(200, json=tools_result),
         )
 
-        adapter = BaseAdapter(base_url, init_mode=InitMode.ON_FAIL)
+        adapter = BaseAdapter(base_url, init_mode=InitMode.on_fail)
         result = await adapter.get_mcp_tools()
 
         assert result == tools_result
@@ -433,7 +412,7 @@ class TestInitModeOnFail:
             "id": "2",
             "result": {"tools": []},
         }
-        route = respx.post(f"{base_url}/").mock(
+        route = respx.post(base_url).mock(
             side_effect=[
                 # First tools/list fails
                 httpx.Response(400, text="Bad Request"),
@@ -446,7 +425,7 @@ class TestInitModeOnFail:
             ]
         )
 
-        adapter = BaseAdapter(base_url, init_mode=InitMode.ON_FAIL)
+        adapter = BaseAdapter(base_url, init_mode=InitMode.on_fail)
         result = await adapter.get_mcp_tools()
 
         assert result == tools_result
@@ -461,19 +440,19 @@ class TestInitModeOnFail:
             "result": {"protocolVersion": PROTOCOL_VERSION},
         }
         # Pre-initialize the adapter
-        respx.post(f"{base_url}/").mock(
+        respx.post(base_url).mock(
             side_effect=[
                 httpx.Response(200, json=init_result, headers={"Mcp-Session-Id": "s1"}),
                 httpx.Response(202),
             ]
         )
 
-        adapter = BaseAdapter(base_url, init_mode=InitMode.ON_FAIL)
+        adapter = BaseAdapter(base_url, init_mode=InitMode.on_fail)
         await adapter.initialize()
 
         respx.reset()
         # Now a request fails — should NOT retry since already initialized
-        respx.post(f"{base_url}/").mock(
+        respx.post(base_url).mock(
             return_value=httpx.Response(400, text="Bad Request"),
         )
 
@@ -487,7 +466,7 @@ class TestInitModeOnFail:
             "id": "1",
             "result": {"protocolVersion": PROTOCOL_VERSION},
         }
-        route = respx.post(f"{base_url}/").mock(
+        route = respx.post(base_url).mock(
             side_effect=[
                 # First tools/list fails
                 httpx.Response(400, text="Bad Request"),
@@ -500,7 +479,7 @@ class TestInitModeOnFail:
             ]
         )
 
-        adapter = BaseAdapter(base_url, init_mode=InitMode.ON_FAIL)
+        adapter = BaseAdapter(base_url, init_mode=InitMode.on_fail)
 
         with pytest.raises(httpx.HTTPStatusError) as exc_info:
             await adapter.get_mcp_tools()
@@ -517,11 +496,11 @@ class TestInitModeNone:
             "id": "2",
             "result": {"tools": []},
         }
-        route = respx.post(f"{base_url}/").mock(
+        route = respx.post(base_url).mock(
             return_value=httpx.Response(200, json=tools_result),
         )
 
-        adapter = BaseAdapter(base_url, init_mode=InitMode.NONE)
+        adapter = BaseAdapter(base_url, init_mode=InitMode.none)
         result = await adapter.get_mcp_tools()
 
         assert result == tools_result
@@ -530,11 +509,11 @@ class TestInitModeNone:
 
     @respx.mock
     async def test_error_propagates_directly(self, base_url):
-        route = respx.post(f"{base_url}/").mock(
+        route = respx.post(base_url).mock(
             return_value=httpx.Response(400, text="Bad Request"),
         )
 
-        adapter = BaseAdapter(base_url, init_mode=InitMode.NONE)
+        adapter = BaseAdapter(base_url, init_mode=InitMode.none)
 
         with pytest.raises(httpx.HTTPStatusError):
             await adapter.get_mcp_tools()
@@ -617,7 +596,7 @@ class TestInitializeSSE:
             },
         }
         sse_body = _sse_body(init_result)
-        respx.post(f"{base_url}/").mock(
+        respx.post(base_url).mock(
             side_effect=[
                 httpx.Response(
                     200,
@@ -646,7 +625,7 @@ class TestInitializeSSE:
             "result": {"tools": [{"name": "my_tool"}]},
         }
         sse_body = _sse_body(tools_result)
-        respx.post(f"{base_url}/tools").mock(
+        respx.post(base_url).mock(
             return_value=httpx.Response(
                 200,
                 text=sse_body,
@@ -655,6 +634,8 @@ class TestInitializeSSE:
         )
 
         adapter = BaseAdapter(base_url)
-        result = await adapter._make_request("/tools", method="POST", data={})
+        result = await adapter._make_request(
+            {"id": "2", "jsonrpc": "2.0", "method": "tools/list", "params": {}}
+        )
 
         assert result == tools_result

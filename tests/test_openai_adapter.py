@@ -14,7 +14,7 @@ class TestGetToolDefinitions:
     async def test_converts_mcp_tools_to_openai_format(
         self, base_url, sample_mcp_tools
     ):
-        respx.post(f"{base_url}/").mock(
+        respx.post(base_url).mock(
             return_value=httpx.Response(
                 200, json={"result": {"tools": sample_mcp_tools}}
             )
@@ -33,7 +33,7 @@ class TestGetToolDefinitions:
     async def test_handles_missing_input_schema(
         self, base_url, sample_mcp_tool_no_schema
     ):
-        respx.post(f"{base_url}/").mock(
+        respx.post(base_url).mock(
             return_value=httpx.Response(
                 200, json={"result": {"tools": sample_mcp_tool_no_schema}}
             )
@@ -50,7 +50,7 @@ class TestGetToolDefinitions:
 
     @respx.mock
     async def test_handles_empty_tools(self, base_url):
-        respx.post(f"{base_url}/").mock(
+        respx.post(base_url).mock(
             return_value=httpx.Response(200, json={"result": {"tools": []}})
         )
 
@@ -62,7 +62,7 @@ class TestGetToolDefinitions:
 class TestProcessToolCalls:
     @respx.mock
     async def test_success(self, base_url, sample_tool_result):
-        respx.post(f"{base_url}/").mock(
+        respx.post(base_url).mock(
             return_value=httpx.Response(200, json=sample_tool_result)
         )
 
@@ -87,7 +87,7 @@ class TestProcessToolCalls:
 
     @respx.mock
     async def test_multiple_calls(self, base_url):
-        respx.post(f"{base_url}/").mock(
+        respx.post(base_url).mock(
             side_effect=[
                 httpx.Response(200, json={"temp": 72}),
                 httpx.Response(200, json={"results": []}),
@@ -141,7 +141,7 @@ class TestProcessToolCalls:
 
     @respx.mock
     async def test_http_error(self, base_url):
-        respx.post(f"{base_url}/").mock(
+        respx.post(base_url).mock(
             return_value=httpx.Response(500, text="Server Error")
         )
 
@@ -164,7 +164,7 @@ class TestProcessToolCalls:
 
     @respx.mock
     async def test_return_errors_false_omits_failures(self, base_url):
-        respx.post(f"{base_url}/").mock(
+        respx.post(base_url).mock(
             return_value=httpx.Response(500, text="Server Error")
         )
 
@@ -185,7 +185,7 @@ class TestProcessToolCalls:
 
     @respx.mock
     async def test_string_result_not_double_encoded(self, base_url):
-        respx.post(f"{base_url}/").mock(
+        respx.post(base_url).mock(
             return_value=httpx.Response(200, json="plain string result")
         )
 
@@ -208,7 +208,7 @@ class TestProcessToolCalls:
 
     @respx.mock
     async def test_dict_result_is_json_encoded(self, base_url, sample_tool_result):
-        respx.post(f"{base_url}/").mock(
+        respx.post(base_url).mock(
             return_value=httpx.Response(200, json=sample_tool_result)
         )
 

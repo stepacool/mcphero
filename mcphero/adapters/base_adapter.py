@@ -107,12 +107,11 @@ class BaseAdapter:
         }
 
         async with httpx.AsyncClient(
-            base_url=self.base_url,
             timeout=self.timeout,
             headers=headers,
             follow_redirects=True,
         ) as client:
-            response = await client.post("", json=init_payload)
+            response = await client.post(self.base_url, json=init_payload)
             response.raise_for_status()
 
             session_id = response.headers.get("Mcp-Session-Id")
@@ -135,7 +134,7 @@ class BaseAdapter:
             if self._session_id:
                 notify_headers["Mcp-Session-Id"] = self._session_id
 
-            await client.post("", json=notification, headers=notify_headers)
+            await client.post(self.base_url, json=notification, headers=notify_headers)
 
         return result
 
@@ -145,10 +144,7 @@ class BaseAdapter:
 
     async def _make_request(
         self,
-        endpoint: str,
-        method: str = "GET",
-        data: dict | None = None,
-        params: dict | None = None,
+        data: dict,
         *,
         _retry: bool = True,
     ) -> dict:
@@ -162,17 +158,11 @@ class BaseAdapter:
             headers["MCP-Protocol-Version"] = self._protocol_version
 
         async with httpx.AsyncClient(
-            base_url=self.base_url,
             timeout=self.timeout,
             headers=headers,
             follow_redirects=True,
         ) as client:
-            if method.upper() == "GET":
-                response = await client.get(endpoint, params=params)
-            elif method.upper() == "POST":
-                response = await client.post(endpoint, json=data)
-            else:
-                raise ValueError(f"Unsupported HTTP method: {method}")
+            response = await client.post(self.base_url, json=data)
 
             try:
                 response.raise_for_status()
@@ -183,31 +173,25 @@ class BaseAdapter:
                     and self._initialize_result is None
                 ):
                     await self.initialize()
-                    return await self._make_request(
-                        endpoint, method, data, params, _retry=False
-                    )
+                    return await self._make_request(data, _retry=False)
                 raise
             return self._parse_response(response)
 
     async def get_mcp_tools(self) -> dict:
         await self._ensure_initialized()
         return await self._make_request(
-            "",
-            "POST",
-            data={
+            {
                 "id": str(uuid.uuid4()),
                 "jsonrpc": "2.0",
                 "method": "tools/list",
                 "params": {},
-            },
+            }
         )
 
     async def call_mcp_tool(self, tool_name: str, arguments: dict) -> dict:
         await self._ensure_initialized()
         return await self._make_request(
-            "",
-            "POST",
-            data={
+            {
                 "id": str(uuid.uuid4()),
                 "jsonrpc": "2.0",
                 "method": "tools/call",
@@ -215,5 +199,5 @@ class BaseAdapter:
                     "name": tool_name,
                     "arguments": arguments,
                 },
-            },
+            }
         )
