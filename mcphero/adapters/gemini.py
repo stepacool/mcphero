@@ -19,10 +19,10 @@ except ImportError as e:
 
 import httpx
 
-from mcphero.adapters.base_adapter import BaseAdapter
+from mcphero.adapters.base_adapter import BaseAdapter, MCPToolDefinition
 
 
-class MCPToolAdapterGemini(BaseAdapter):
+class MCPToolAdapterGemini(BaseAdapter[types.FunctionCall, types.Content]):
     """
     Adapter that converts remote MCP server tools to Gemini-compatible tool definitions.
     Also converts Gemini's function calls to HTTP requests to the MCP server.
@@ -59,43 +59,101 @@ class MCPToolAdapterGemini(BaseAdapter):
             # Add results to conversation and continue
     """
 
-    async def get_function_declarations(self) -> list[types.FunctionDeclaration]:
+    @staticmethod
+    def _to_gemini_declaration(tool: MCPToolDefinition) -> types.FunctionDeclaration:
+        """Convert MCPToolDefinition to Gemini FunctionDeclaration."""
+        return types.FunctionDeclaration(
+            name=tool.name,
+            description=tool.description,
+            parameters=tool.input_schema,
+        )
+
+    async def get_function_declarations(
+        self, *, parallel: bool = True
+    ) -> list[types.FunctionDeclaration]:
         """
-        Fetch tools from MCP server and convert them to Gemini FunctionDeclaration objects.
+        Fetch tools from MCP servers and convert them to Gemini FunctionDeclaration objects.
 
         Returns:
             List of FunctionDeclaration objects.
         """
-        mcp_tools = await self.get_mcp_tools()
+        tools = await self.discover_tools(parallel=parallel)
+        return [self._to_gemini_declaration(t) for t in tools]
 
-        declarations: list[types.FunctionDeclaration] = []
-        for tool in mcp_tools["result"]["tools"]:
-            declaration = types.FunctionDeclaration(
-                name=tool["name"],
-                description=tool.get("description", ""),
-                parameters=tool.get(
-                    "inputSchema",
-                    {
-                        "type": "object",
-                        "properties": {},
-                    },
-                ),
-            )
-            declarations.append(declaration)
-
-        return declarations
-
-    async def get_tool(self) -> types.Tool:
+    async def get_tool(self, *, parallel: bool = True) -> types.Tool:
         """
-        Fetch tools from MCP server and return as a Gemini Tool object.
+        Fetch tools from MCP servers and return as a Gemini Tool object.
 
         This returns a Tool that can be passed directly to GenerateContentConfig.
 
         Returns:
             A Tool object containing all function declarations.
         """
-        declarations = await self.get_function_declarations()
+        declarations = await self.get_function_declarations(parallel=parallel)
         return types.Tool(function_declarations=declarations)
+
+    async def _execute_single_tool_call(
+        self, tool_call: types.FunctionCall, *, return_errors: bool
+    ) -> types.Content | None:
+        fc = tool_call
+        tool_name = fc.name
+        arguments = fc.args if fc.args else {}
+        call_id = getattr(fc, "id", None)
+
+        try:
+            result = await self.call_tool(tool_name, arguments)
+
+            function_response = types.FunctionResponse(
+                name=tool_name,
+                response={"result": result} if not isinstance(result, dict) else result,
+                id=call_id,
+            )
+
+            return types.Content(
+                role="user",
+                parts=[
+                    types.Part.from_function_response(
+                        name=function_response.name,
+                        response=function_response.response,
+                    )
+                ],
+            )
+
+        except httpx.HTTPError as e:
+            if return_errors:
+                function_response = types.FunctionResponse(
+                    name=tool_name,
+                    response={"error": f"HTTP error calling tool: {str(e)}"},
+                    id=call_id,
+                )
+                return types.Content(
+                    role="user",
+                    parts=[
+                        types.Part.from_function_response(
+                            name=function_response.name,
+                            response=function_response.response,
+                        )
+                    ],
+                )
+            return None
+
+        except Exception as e:
+            if return_errors:
+                function_response = types.FunctionResponse(
+                    name=tool_name,
+                    response={"error": f"Unexpected error: {str(e)}"},
+                    id=call_id,
+                )
+                return types.Content(
+                    role="user",
+                    parts=[
+                        types.Part.from_function_response(
+                            name=function_response.name,
+                            response=function_response.response,
+                        )
+                    ],
+                )
+            return None
 
     async def process_function_calls(
         self,
@@ -121,74 +179,9 @@ class MCPToolAdapterGemini(BaseAdapter):
                 contents.append(response.candidates[0].content)  # Model's function call
                 contents.extend(results)  # Function responses
         """
-        if not function_calls:
-            return []
-        results: list[types.Content] = []
-
-        for fc in function_calls:
-            tool_name = fc.name
-            arguments = fc.args if fc.args else {}
-            call_id = getattr(fc, "id", None)
-
-            try:
-                result = await self.call_mcp_tool(tool_name, arguments)
-
-                function_response = types.FunctionResponse(
-                    name=tool_name,
-                    response={"result": result}
-                    if not isinstance(result, dict)
-                    else result,
-                    id=call_id,
-                )
-
-                content = types.Content(
-                    role="user",
-                    parts=[
-                        types.Part.from_function_response(
-                            name=function_response.name,
-                            response=function_response.response,
-                        )
-                    ],
-                )
-                results.append(content)
-
-            except httpx.HTTPError as e:
-                if return_errors:
-                    function_response = types.FunctionResponse(
-                        name=tool_name,
-                        response={"error": f"HTTP error calling tool: {str(e)}"},
-                        id=call_id,
-                    )
-                    content = types.Content(
-                        role="user",
-                        parts=[
-                            types.Part.from_function_response(
-                                name=function_response.name,
-                                response=function_response.response,
-                            )
-                        ],
-                    )
-                    results.append(content)
-
-            except Exception as e:
-                if return_errors:
-                    function_response = types.FunctionResponse(
-                        name=tool_name,
-                        response={"error": f"Unexpected error: {str(e)}"},
-                        id=call_id,
-                    )
-                    content = types.Content(
-                        role="user",
-                        parts=[
-                            types.Part.from_function_response(
-                                name=function_response.name,
-                                response=function_response.response,
-                            )
-                        ],
-                    )
-                    results.append(content)
-
-        return results
+        return await self.process_tool_calls(
+            function_calls, return_errors=return_errors, parallel=False
+        )
 
     async def process_function_calls_as_parts(
         self,
@@ -223,7 +216,7 @@ class MCPToolAdapterGemini(BaseAdapter):
             arguments = fc.args if fc.args else {}
 
             try:
-                result = await self.call_mcp_tool(tool_name, arguments)
+                result = await self.call_tool(tool_name, arguments)
 
                 part = types.Part.from_function_response(
                     name=tool_name,

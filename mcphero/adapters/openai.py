@@ -3,7 +3,6 @@
 
 from __future__ import annotations
 
-import asyncio
 import json
 
 import httpx
@@ -16,10 +15,12 @@ from openai.types.chat import (
 from mcphero.adapters.base_adapter import BaseAdapter, MCPToolDefinition
 
 
-class MCPToolAdapterOpenAI(BaseAdapter):
+class MCPToolAdapterOpenAI(
+    BaseAdapter[ChatCompletionMessageToolCall, ChatCompletionToolMessageParam]
+):
     """
     Adapter for OpenAI. Supports single or multiple MCP servers.
-    
+
     Usage:
         adapter = MCPToolAdapterOpenAI("https://mcp.example.com/server")
         # or
@@ -27,10 +28,10 @@ class MCPToolAdapterOpenAI(BaseAdapter):
             MCPServerConfig(url="https://mcp.example.com/weather", name="weather"),
             MCPServerConfig(url="https://mcp.example.com/calendar", name="calendar"),
         ])
-        
+
         tools = await adapter.get_tool_definitions()
         response = client.chat.completions.create(model="gpt-4o", messages=messages, tools=tools)
-        
+
         if response.choices[0].message.tool_calls:
             results = await adapter.process_tool_calls(response.choices[0].message.tool_calls)
     """
@@ -47,58 +48,43 @@ class MCPToolAdapterOpenAI(BaseAdapter):
             },
         }
 
-    async def get_tool_definitions(self, *, parallel: bool = True) -> list[ChatCompletionToolParam]:
+    async def get_tool_definitions(
+        self, *, parallel: bool = True
+    ) -> list[ChatCompletionToolParam]:
         """Fetch tools and return OpenAI-compatible definitions."""
         tools = await self.discover_tools(parallel=parallel)
         return [self._to_openai_tool(t) for t in tools]
 
-    async def process_tool_calls(
-        self,
-        tool_calls: list[ChatCompletionMessageToolCall],
-        *,
-        return_errors: bool = True,
-        parallel: bool = True,
-    ) -> list[ChatCompletionToolMessageParam]:
-        """
-        Process OpenAI tool calls, routing to appropriate servers.
-        """
-        if not tool_calls:
-            return []
-
-        async def execute_one(tc: ChatCompletionMessageToolCall) -> ChatCompletionToolMessageParam | None:
-            try:
-                arguments = json.loads(tc.function.arguments)
-            except json.JSONDecodeError:
-                if return_errors:
-                    result: ChatCompletionToolMessageParam =  {
-                        "tool_call_id": tc.id,
-                        "role": "tool",
-                        "content": json.dumps({"error": "Failed to parse arguments"}),
-                    }
-                    return result
-                return None
-
-            try:
-                response = await self.call_tool(tc.function.name, arguments)
-                content = json.dumps(response) if not isinstance(response, str) else response
-                result: ChatCompletionToolMessageParam = {
+    async def _execute_single_tool_call(
+        self, tool_call: ChatCompletionMessageToolCall, *, return_errors: bool
+    ) -> ChatCompletionToolMessageParam | None:
+        tc = tool_call
+        try:
+            arguments = json.loads(tc.function.arguments)
+        except json.JSONDecodeError:
+            if return_errors:
+                return {
                     "tool_call_id": tc.id,
                     "role": "tool",
-                    "content": content,
+                    "content": json.dumps({"error": "Failed to parse arguments"}),
                 }
-                return result
-            except (KeyError, httpx.HTTPError, Exception) as e:
-                if return_errors:
-                    result: ChatCompletionToolMessageParam =  {
-                        "tool_call_id": tc.id,
-                        "role": "tool",
-                        "content": json.dumps({"error": str(e)}),
-                    }
-                    return result
-                return None
+            return None
 
-        if parallel:
-            results = await asyncio.gather(*[execute_one(tc) for tc in tool_calls], return_exceptions=True)
-            return [r for r in results if r is not None and not isinstance(r, BaseException)]
-        else:
-            return [r for tc in tool_calls if (r := await execute_one(tc)) is not None]
+        try:
+            response = await self.call_tool(tc.function.name, arguments)
+            content = (
+                json.dumps(response) if not isinstance(response, str) else response
+            )
+            return {
+                "tool_call_id": tc.id,
+                "role": "tool",
+                "content": content,
+            }
+        except (KeyError, httpx.HTTPError, Exception) as e:
+            if return_errors:
+                return {
+                    "tool_call_id": tc.id,
+                    "role": "tool",
+                    "content": json.dumps({"error": str(e)}),
+                }
+            return None

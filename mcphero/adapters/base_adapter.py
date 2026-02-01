@@ -10,7 +10,7 @@ import json
 import uuid
 from dataclasses import dataclass, field
 from enum import Enum
-from typing import Any, TypedDict
+from typing import Any, Generic, TypedDict, TypeVar
 
 import httpx
 
@@ -152,9 +152,14 @@ class MCPConnection:
             },
         }
 
-        headers = {"Accept": "application/json, text/event-stream", **(self.config.headers or {})}
+        headers = {
+            "Accept": "application/json, text/event-stream",
+            **(self.config.headers or {}),
+        }
 
-        async with httpx.AsyncClient(timeout=self.config.timeout, headers=headers, follow_redirects=True) as client:
+        async with httpx.AsyncClient(
+            timeout=self.config.timeout, headers=headers, follow_redirects=True
+        ) as client:
             response = await client.post(self.config.url, json=init_payload)
             response.raise_for_status()
 
@@ -162,14 +167,21 @@ class MCPConnection:
                 self._session_id = session_id
 
             result = self._parse_response(response)
-            self._protocol_version = result.get("result", {}).get("protocolVersion", PROTOCOL_VERSION)
+            self._protocol_version = result.get("result", {}).get(
+                "protocolVersion", PROTOCOL_VERSION
+            )
             self._initialize_result = result
 
-            notification: JsonRpcNotification = {"jsonrpc": "2.0", "method": "notifications/initialized"}
+            notification: JsonRpcNotification = {
+                "jsonrpc": "2.0",
+                "method": "notifications/initialized",
+            }
             notify_headers = dict(headers)
             if self._session_id:
                 notify_headers["Mcp-Session-Id"] = self._session_id
-            await client.post(self.config.url, json=notification, headers=notify_headers)
+            await client.post(
+                self.config.url, json=notification, headers=notify_headers
+            )
 
         return result
 
@@ -177,19 +189,30 @@ class MCPConnection:
         if self.config.init_mode == InitMode.auto:
             await self.initialize()
 
-    async def _make_request(self, data: JsonRpcRequest, *, _retry: bool = True) -> JsonRpcResponse:
-        headers = {"Accept": "application/json, text/event-stream", **(self.config.headers or {})}
+    async def _make_request(
+        self, data: JsonRpcRequest, *, _retry: bool = True
+    ) -> JsonRpcResponse:
+        headers = {
+            "Accept": "application/json, text/event-stream",
+            **(self.config.headers or {}),
+        }
         if self._session_id:
             headers["Mcp-Session-Id"] = self._session_id
         if self._protocol_version:
             headers["MCP-Protocol-Version"] = self._protocol_version
 
-        async with httpx.AsyncClient(timeout=self.config.timeout, headers=headers, follow_redirects=True) as client:
+        async with httpx.AsyncClient(
+            timeout=self.config.timeout, headers=headers, follow_redirects=True
+        ) as client:
             response = await client.post(self.config.url, json=data)
             try:
                 response.raise_for_status()
             except httpx.HTTPStatusError:
-                if _retry and self.config.init_mode == InitMode.on_fail and self._initialize_result is None:
+                if (
+                    _retry
+                    and self.config.init_mode == InitMode.on_fail
+                    and self._initialize_result is None
+                ):
                     await self.initialize()
                     return await self._make_request(data, _retry=False)
                 raise
@@ -197,25 +220,35 @@ class MCPConnection:
 
     async def get_tools(self) -> list[RawMCPTool]:
         await self._ensure_initialized()
-        result = await self._make_request({
-            "id": str(uuid.uuid4()),
-            "jsonrpc": "2.0",
-            "method": "tools/list",
-            "params": {},
-        })
+        result = await self._make_request(
+            {
+                "id": str(uuid.uuid4()),
+                "jsonrpc": "2.0",
+                "method": "tools/list",
+                "params": {},
+            }
+        )
         return result.get("result", {}).get("tools", [])
 
-    async def call_tool(self, tool_name: str, arguments: dict[str, Any]) -> JsonRpcResponse:
+    async def call_tool(
+        self, tool_name: str, arguments: dict[str, Any]
+    ) -> JsonRpcResponse:
         await self._ensure_initialized()
-        return await self._make_request({
-            "id": str(uuid.uuid4()),
-            "jsonrpc": "2.0",
-            "method": "tools/call",
-            "params": {"name": tool_name, "arguments": arguments},
-        })
+        return await self._make_request(
+            {
+                "id": str(uuid.uuid4()),
+                "jsonrpc": "2.0",
+                "method": "tools/call",
+                "params": {"name": tool_name, "arguments": arguments},
+            }
+        )
 
 
-class BaseAdapter:
+ToolCallT = TypeVar("ToolCallT")
+ResultT = TypeVar("ResultT")
+
+
+class BaseAdapter(Generic[ToolCallT, ResultT]):
     """
     Base MCP adapter supporting one or many servers.
 
@@ -236,15 +269,15 @@ class BaseAdapter:
             servers = [servers]
 
         self._configs: list[MCPServerConfig] = [
-            MCPServerConfig(url=s) if isinstance(s, str) else s
-            for s in servers
+            MCPServerConfig(url=s) if isinstance(s, str) else s for s in servers
         ]
         self.auto_prefix_on_collision = auto_prefix_on_collision
         self.prefix_separator = prefix_separator
 
-        self._connections: dict[str, MCPConnection] = {
-            cfg.name: MCPConnection(cfg) for cfg in self._configs
-        }
+        self._connections: dict[str, MCPConnection] = {}
+        for cfg in self._configs:
+            assert cfg.name is not None
+            self._connections[cfg.name] = MCPConnection(cfg)
         self._tool_map: dict[str, ToolMapping] = {}
         self._tools: list[MCPToolDefinition] = []
         self._discovered = False
@@ -265,7 +298,9 @@ class BaseAdapter:
             return f"{prefix}{self.prefix_separator}{tool_name}"
         return tool_name
 
-    def _resolve_tools(self, tools_by_server: dict[str, list[RawMCPTool]]) -> list[MCPToolDefinition]:
+    def _resolve_tools(
+        self, tools_by_server: dict[str, list[RawMCPTool]]
+    ) -> list[MCPToolDefinition]:
         """Resolve naming collisions and build typed tool definitions."""
         # Find collisions
         tool_sources: dict[str, list[str]] = {}
@@ -275,7 +310,9 @@ class BaseAdapter:
                 name = self._make_prefixed_name(config.tool_prefix, tool["name"])
                 tool_sources.setdefault(name, []).append(server_name)
 
-        collisions = {name for name, sources in tool_sources.items() if len(sources) > 1}
+        collisions = {
+            name for name, sources in tool_sources.items() if len(sources) > 1
+        }
 
         # Build definitions
         definitions: list[MCPToolDefinition] = []
@@ -298,7 +335,9 @@ class BaseAdapter:
                     original_name=tool["name"],
                     server_name=server_name,
                     description=tool.get("description", ""),
-                    input_schema=tool.get("inputSchema", {"type": "object", "properties": {}}),
+                    input_schema=tool.get(
+                        "inputSchema", {"type": "object", "properties": {}}
+                    ),
                     raw=tool,
                 )
                 definitions.append(definition)
@@ -320,6 +359,7 @@ class BaseAdapter:
             List of typed tool definitions.
         """
         if parallel and self.is_multi_server:
+
             async def fetch_one(name: str) -> tuple[str, list[RawMCPTool]]:
                 return name, await self._connections[name].get_tools()
 
@@ -327,11 +367,11 @@ class BaseAdapter:
                 *[fetch_one(name) for name in self._connections],
                 return_exceptions=True,
             )
-            tools_by_server = {
-                name: tools for result in results
-                if not isinstance(result, Exception)
-                for name, tools in [result]
-            }
+            tools_by_server: dict[str, list[RawMCPTool]] = {}
+            for result in results:
+                if not isinstance(result, BaseException):
+                    name, tools = result
+                    tools_by_server[name] = tools
         else:
             tools_by_server = {}
             for name, conn in self._connections.items():
@@ -355,7 +395,57 @@ class BaseAdapter:
 
         return await mapping.connection.call_tool(mapping.original_name, arguments)
 
-    async def initialize_all(self, *, parallel: bool = True) -> dict[str, JsonRpcResponse | Exception]:
+    async def _execute_single_tool_call(
+        self, tool_call: ToolCallT, *, return_errors: bool
+    ) -> ResultT | None:
+        """Execute a single provider-specific tool call.
+
+        Each child adapter must implement this. It receives one provider-specific
+        tool-call object and returns one provider-specific result (or ``None`` to skip).
+        """
+        raise NotImplementedError
+
+    async def process_tool_calls(
+        self,
+        tool_calls: list[ToolCallT],
+        *,
+        return_errors: bool = True,
+        parallel: bool = True,
+    ) -> list[ResultT]:
+        """Generic loop: run ``_execute_single_tool_call`` for every item.
+
+        Handles early-return on empty list, parallel/sequential execution,
+        and filters out ``None`` results.
+        """
+        if not tool_calls:
+            return []
+
+        if parallel:
+            results = await asyncio.gather(
+                *[
+                    self._execute_single_tool_call(tc, return_errors=return_errors)
+                    for tc in tool_calls
+                ],
+                return_exceptions=True,
+            )
+            return [
+                r for r in results if r is not None and not isinstance(r, BaseException)
+            ]
+        else:
+            return [
+                r
+                for tc in tool_calls
+                if (
+                    r := await self._execute_single_tool_call(
+                        tc, return_errors=return_errors
+                    )
+                )
+                is not None
+            ]
+
+    async def initialize_all(
+        self, *, parallel: bool = True
+    ) -> dict[str, JsonRpcResponse | Exception]:
         """Pre-initialize all connections."""
 
         async def init_one(name: str) -> tuple[str, JsonRpcResponse | Exception]:
