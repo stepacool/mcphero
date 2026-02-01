@@ -9,16 +9,22 @@ try:
 except ImportError:
     HAS_GOOGLE_GENAI = False
 
+from mcphero.adapters.base_adapter import MCPServerConfig
+
 pytestmark = pytest.mark.skipif(
     not HAS_GOOGLE_GENAI, reason="google-genai not installed"
 )
+
+
+def _tools_response(tools):
+    return {"jsonrpc": "2.0", "id": "1", "result": {"tools": tools}}
 
 
 @pytest.fixture
 def adapter(base_url):
     from mcphero.adapters.gemini import MCPToolAdapterGemini
 
-    return MCPToolAdapterGemini(base_url)
+    return MCPToolAdapterGemini(MCPServerConfig(url=base_url, init_mode="none"))
 
 
 class TestGetFunctionDeclarations:
@@ -26,7 +32,7 @@ class TestGetFunctionDeclarations:
     async def test_converts_mcp_tools(self, base_url, adapter, sample_mcp_tools):
         respx.post(base_url).mock(
             return_value=httpx.Response(
-                200, json={"result": {"tools": sample_mcp_tools}}
+                200, json=_tools_response(sample_mcp_tools)
             )
         )
 
@@ -42,7 +48,7 @@ class TestGetFunctionDeclarations:
     ):
         respx.post(base_url).mock(
             return_value=httpx.Response(
-                200, json={"result": {"tools": sample_mcp_tool_no_schema}}
+                200, json=_tools_response(sample_mcp_tool_no_schema)
             )
         )
 
@@ -54,7 +60,7 @@ class TestGetFunctionDeclarations:
     @respx.mock
     async def test_empty_list(self, base_url, adapter):
         respx.post(base_url).mock(
-            return_value=httpx.Response(200, json={"result": {"tools": []}})
+            return_value=httpx.Response(200, json=_tools_response([]))
         )
 
         declarations = await adapter.get_function_declarations()
@@ -68,7 +74,7 @@ class TestGetTool:
     ):
         respx.post(base_url).mock(
             return_value=httpx.Response(
-                200, json={"result": {"tools": sample_mcp_tools}}
+                200, json=_tools_response(sample_mcp_tools)
             )
         )
 
@@ -80,9 +86,12 @@ class TestGetTool:
 
 class TestProcessFunctionCalls:
     @respx.mock
-    async def test_success(self, base_url, adapter, sample_tool_result):
+    async def test_success(self, base_url, adapter, sample_mcp_tools, sample_tool_result):
         respx.post(base_url).mock(
-            return_value=httpx.Response(200, json=sample_tool_result)
+            side_effect=[
+                httpx.Response(200, json=_tools_response(sample_mcp_tools)),
+                httpx.Response(200, json=sample_tool_result),
+            ]
         )
 
         fc = types.FunctionCall(name="get_weather", args={"location": "London"})
@@ -94,10 +103,12 @@ class TestProcessFunctionCalls:
         assert len(results[0].parts) == 1
 
     @respx.mock
-    async def test_non_dict_result_wrapped(self, base_url, adapter):
-        # When result is not a dict, it gets wrapped as {"result": ...}
+    async def test_non_dict_result_wrapped(self, base_url, adapter, sample_mcp_tools):
         respx.post(base_url).mock(
-            return_value=httpx.Response(200, json="string result")
+            side_effect=[
+                httpx.Response(200, json=_tools_response(sample_mcp_tools)),
+                httpx.Response(200, json="string result"),
+            ]
         )
 
         fc = types.FunctionCall(name="get_weather", args={"location": "London"})
@@ -106,10 +117,12 @@ class TestProcessFunctionCalls:
         assert len(results) == 1
 
     @respx.mock
-    async def test_dict_result_passed_directly(self, base_url, adapter):
-        data = {"temp": 72}
+    async def test_dict_result_passed_directly(self, base_url, adapter, sample_mcp_tools):
         respx.post(base_url).mock(
-            return_value=httpx.Response(200, json=data)
+            side_effect=[
+                httpx.Response(200, json=_tools_response(sample_mcp_tools)),
+                httpx.Response(200, json={"temp": 72}),
+            ]
         )
 
         fc = types.FunctionCall(name="get_weather", args={"location": "London"})
@@ -118,7 +131,15 @@ class TestProcessFunctionCalls:
         assert len(results) == 1
 
     @respx.mock
-    async def test_http_error(self, base_url, adapter):
+    async def test_http_error(self, base_url, adapter, sample_mcp_tools):
+        respx.post(base_url).mock(
+            return_value=httpx.Response(
+                200, json=_tools_response(sample_mcp_tools)
+            )
+        )
+        await adapter.discover_tools()
+
+        respx.reset()
         respx.post(base_url).mock(
             return_value=httpx.Response(500, text="Server Error")
         )
@@ -129,7 +150,15 @@ class TestProcessFunctionCalls:
         assert len(results) == 1
 
     @respx.mock
-    async def test_return_errors_false(self, base_url, adapter):
+    async def test_return_errors_false(self, base_url, adapter, sample_mcp_tools):
+        respx.post(base_url).mock(
+            return_value=httpx.Response(
+                200, json=_tools_response(sample_mcp_tools)
+            )
+        )
+        await adapter.discover_tools()
+
+        respx.reset()
         respx.post(base_url).mock(
             return_value=httpx.Response(500, text="Server Error")
         )
@@ -140,9 +169,12 @@ class TestProcessFunctionCalls:
         assert len(results) == 0
 
     @respx.mock
-    async def test_empty_args(self, base_url, adapter):
+    async def test_empty_args(self, base_url, adapter, sample_mcp_tool_no_schema):
         respx.post(base_url).mock(
-            return_value=httpx.Response(200, json={"status": "ok"})
+            side_effect=[
+                httpx.Response(200, json=_tools_response(sample_mcp_tool_no_schema)),
+                httpx.Response(200, json={"status": "ok"}),
+            ]
         )
 
         fc = types.FunctionCall(name="ping", args=None)
@@ -153,7 +185,15 @@ class TestProcessFunctionCalls:
 
 class TestProcessFunctionCallsAsParts:
     @respx.mock
-    async def test_returns_parts(self, base_url, adapter, sample_tool_result):
+    async def test_returns_parts(self, base_url, adapter, sample_mcp_tools, sample_tool_result):
+        respx.post(base_url).mock(
+            return_value=httpx.Response(
+                200, json=_tools_response(sample_mcp_tools)
+            )
+        )
+        await adapter.discover_tools()
+
+        respx.reset()
         respx.post(base_url).mock(
             return_value=httpx.Response(200, json=sample_tool_result)
         )
@@ -165,7 +205,15 @@ class TestProcessFunctionCallsAsParts:
         assert isinstance(parts[0], types.Part)
 
     @respx.mock
-    async def test_error_returns_part(self, base_url, adapter):
+    async def test_error_returns_part(self, base_url, adapter, sample_mcp_tools):
+        respx.post(base_url).mock(
+            return_value=httpx.Response(
+                200, json=_tools_response(sample_mcp_tools)
+            )
+        )
+        await adapter.discover_tools()
+
+        respx.reset()
         respx.post(base_url).mock(
             return_value=httpx.Response(500, text="Server Error")
         )

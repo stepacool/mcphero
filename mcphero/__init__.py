@@ -1,7 +1,9 @@
 from mcphero.adapters.openai import MCPToolAdapterOpenAI
+from mcphero.adapters.base_adapter import MCPServerConfig
 
 __all__ = [
     "MCPToolAdapterOpenAI",
+    "MCPServerConfig",
     "MCPToolAdapterGemini",  # pyright: ignore[reportUnsupportedDunderAll]
 ]
 
