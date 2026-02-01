@@ -244,9 +244,7 @@ class TestMCPConnectionMakeRequest:
     @respx.mock
     async def test_returns_parsed_json(self, base_url):
         expected = {"jsonrpc": "2.0", "id": "1", "result": {"tools": []}}
-        respx.post(base_url).mock(
-            return_value=httpx.Response(200, json=expected)
-        )
+        respx.post(base_url).mock(return_value=httpx.Response(200, json=expected))
 
         conn = MCPConnection(MCPServerConfig(url=base_url, init_mode="none"))
         result = await conn._make_request(
@@ -257,9 +255,7 @@ class TestMCPConnectionMakeRequest:
 
     @respx.mock
     async def test_http_error_raises(self, base_url):
-        respx.post(base_url).mock(
-            return_value=httpx.Response(500, text="Error")
-        )
+        respx.post(base_url).mock(return_value=httpx.Response(500, text="Error"))
 
         conn = MCPConnection(MCPServerConfig(url=base_url, init_mode="none"))
         with pytest.raises(httpx.HTTPStatusError):
@@ -458,9 +454,7 @@ class TestInitModeOnFail:
         await conn.initialize()
 
         respx.reset()
-        respx.post(base_url).mock(
-            return_value=httpx.Response(400, text="Bad Request")
-        )
+        respx.post(base_url).mock(return_value=httpx.Response(400, text="Bad Request"))
 
         with pytest.raises(httpx.HTTPStatusError):
             await conn.get_tools()
@@ -748,9 +742,7 @@ class TestDiscoverTools:
         )
 
         adapter = BaseAdapter(
-            MCPServerConfig(
-                url=url, name="weather", init_mode="none", tool_prefix="wx"
-            )
+            MCPServerConfig(url=url, name="weather", init_mode="none", tool_prefix="wx")
         )
         tools = await adapter.discover_tools()
 
@@ -803,9 +795,7 @@ class TestCallTool:
         calendar_route = respx.post(url_b).mock(
             return_value=httpx.Response(
                 200,
-                json=_tools_response(
-                    [{"name": "get_events", "description": "Events"}]
-                ),
+                json=_tools_response([{"name": "get_events", "description": "Events"}]),
             )
         )
 
@@ -826,9 +816,7 @@ class TestCallTool:
     @respx.mock
     async def test_unknown_tool_raises(self, base_url, sample_mcp_tools):
         respx.post(base_url).mock(
-            return_value=httpx.Response(
-                200, json=_tools_response(sample_mcp_tools)
-            )
+            return_value=httpx.Response(200, json=_tools_response(sample_mcp_tools))
         )
 
         adapter = BaseAdapter(MCPServerConfig(url=base_url, init_mode="none"))

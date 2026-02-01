@@ -19,20 +19,19 @@ class TestGetToolDefinitions:
         self, base_url, sample_mcp_tools
     ):
         respx.post(base_url).mock(
-            return_value=httpx.Response(
-                200, json=_tools_response(sample_mcp_tools)
-            )
+            return_value=httpx.Response(200, json=_tools_response(sample_mcp_tools))
         )
 
-        adapter = MCPToolAdapterOpenAI(
-            MCPServerConfig(url=base_url, init_mode="none")
-        )
+        adapter = MCPToolAdapterOpenAI(MCPServerConfig(url=base_url, init_mode="none"))
         tools = await adapter.get_tool_definitions()
 
         assert len(tools) == 2
         assert tools[0]["type"] == "function"
         assert tools[0]["function"]["name"] == "get_weather"
-        assert tools[0]["function"]["description"] == "Get the current weather for a location"
+        assert (
+            tools[0]["function"]["description"]
+            == "Get the current weather for a location"
+        )
         assert tools[0]["function"]["parameters"] == sample_mcp_tools[0]["inputSchema"]
 
     @respx.mock
@@ -45,9 +44,7 @@ class TestGetToolDefinitions:
             )
         )
 
-        adapter = MCPToolAdapterOpenAI(
-            MCPServerConfig(url=base_url, init_mode="none")
-        )
+        adapter = MCPToolAdapterOpenAI(MCPServerConfig(url=base_url, init_mode="none"))
         tools = await adapter.get_tool_definitions()
 
         assert len(tools) == 1
@@ -62,9 +59,7 @@ class TestGetToolDefinitions:
             return_value=httpx.Response(200, json=_tools_response([]))
         )
 
-        adapter = MCPToolAdapterOpenAI(
-            MCPServerConfig(url=base_url, init_mode="none")
-        )
+        adapter = MCPToolAdapterOpenAI(MCPServerConfig(url=base_url, init_mode="none"))
         tools = await adapter.get_tool_definitions()
         assert tools == []
 
@@ -79,9 +74,7 @@ class TestProcessToolCalls:
             ]
         )
 
-        adapter = MCPToolAdapterOpenAI(
-            MCPServerConfig(url=base_url, init_mode="none")
-        )
+        adapter = MCPToolAdapterOpenAI(MCPServerConfig(url=base_url, init_mode="none"))
         tool_calls = [
             ChatCompletionMessageToolCall(
                 id="call_1",
@@ -104,14 +97,10 @@ class TestProcessToolCalls:
     async def test_multiple_calls(self, base_url, sample_mcp_tools):
         # Pre-discover tools, then mock the tool call responses
         respx.post(base_url).mock(
-            return_value=httpx.Response(
-                200, json=_tools_response(sample_mcp_tools)
-            )
+            return_value=httpx.Response(200, json=_tools_response(sample_mcp_tools))
         )
 
-        adapter = MCPToolAdapterOpenAI(
-            MCPServerConfig(url=base_url, init_mode="none")
-        )
+        adapter = MCPToolAdapterOpenAI(MCPServerConfig(url=base_url, init_mode="none"))
         await adapter.discover_tools()
 
         respx.reset()
@@ -148,9 +137,7 @@ class TestProcessToolCalls:
 
     @respx.mock
     async def test_invalid_json_arguments(self, base_url):
-        adapter = MCPToolAdapterOpenAI(
-            MCPServerConfig(url=base_url, init_mode="none")
-        )
+        adapter = MCPToolAdapterOpenAI(MCPServerConfig(url=base_url, init_mode="none"))
         tool_calls = [
             ChatCompletionMessageToolCall(
                 id="call_1",
@@ -172,20 +159,14 @@ class TestProcessToolCalls:
     async def test_http_error(self, base_url, sample_mcp_tools):
         # Discover tools first, then fail on tool call
         respx.post(base_url).mock(
-            return_value=httpx.Response(
-                200, json=_tools_response(sample_mcp_tools)
-            )
+            return_value=httpx.Response(200, json=_tools_response(sample_mcp_tools))
         )
 
-        adapter = MCPToolAdapterOpenAI(
-            MCPServerConfig(url=base_url, init_mode="none")
-        )
+        adapter = MCPToolAdapterOpenAI(MCPServerConfig(url=base_url, init_mode="none"))
         await adapter.discover_tools()
 
         respx.reset()
-        respx.post(base_url).mock(
-            return_value=httpx.Response(500, text="Server Error")
-        )
+        respx.post(base_url).mock(return_value=httpx.Response(500, text="Server Error"))
 
         tool_calls = [
             ChatCompletionMessageToolCall(
@@ -204,24 +185,16 @@ class TestProcessToolCalls:
         assert "error" in content
 
     @respx.mock
-    async def test_return_errors_false_omits_failures(
-        self, base_url, sample_mcp_tools
-    ):
+    async def test_return_errors_false_omits_failures(self, base_url, sample_mcp_tools):
         respx.post(base_url).mock(
-            return_value=httpx.Response(
-                200, json=_tools_response(sample_mcp_tools)
-            )
+            return_value=httpx.Response(200, json=_tools_response(sample_mcp_tools))
         )
 
-        adapter = MCPToolAdapterOpenAI(
-            MCPServerConfig(url=base_url, init_mode="none")
-        )
+        adapter = MCPToolAdapterOpenAI(MCPServerConfig(url=base_url, init_mode="none"))
         await adapter.discover_tools()
 
         respx.reset()
-        respx.post(base_url).mock(
-            return_value=httpx.Response(500, text="Server Error")
-        )
+        respx.post(base_url).mock(return_value=httpx.Response(500, text="Server Error"))
 
         tool_calls = [
             ChatCompletionMessageToolCall(
@@ -238,9 +211,7 @@ class TestProcessToolCalls:
         assert len(results) == 0
 
     @respx.mock
-    async def test_string_result_not_double_encoded(
-        self, base_url, sample_mcp_tools
-    ):
+    async def test_string_result_not_double_encoded(self, base_url, sample_mcp_tools):
         respx.post(base_url).mock(
             side_effect=[
                 httpx.Response(200, json=_tools_response(sample_mcp_tools)),
@@ -248,9 +219,7 @@ class TestProcessToolCalls:
             ]
         )
 
-        adapter = MCPToolAdapterOpenAI(
-            MCPServerConfig(url=base_url, init_mode="none")
-        )
+        adapter = MCPToolAdapterOpenAI(MCPServerConfig(url=base_url, init_mode="none"))
         tool_calls = [
             ChatCompletionMessageToolCall(
                 id="call_1",
@@ -278,9 +247,7 @@ class TestProcessToolCalls:
             ]
         )
 
-        adapter = MCPToolAdapterOpenAI(
-            MCPServerConfig(url=base_url, init_mode="none")
-        )
+        adapter = MCPToolAdapterOpenAI(MCPServerConfig(url=base_url, init_mode="none"))
         tool_calls = [
             ChatCompletionMessageToolCall(
                 id="call_1",
