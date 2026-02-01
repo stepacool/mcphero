@@ -32,7 +32,7 @@ pip install "mcphero[google-genai]"
 ```python
 import asyncio
 from openai import OpenAI
-from mcphero.adapters.openai import MCPToolAdapterOpenAI
+from mcphero import MCPToolAdapterOpenAI
 
 async def main():
     adapter = MCPToolAdapterOpenAI("https://api.mcphero.app/mcp/your-server-id")
@@ -75,7 +75,7 @@ asyncio.run(main())
 import asyncio
 from google import genai
 from google.genai import types
-from mcphero.adapters.gemini import MCPToolAdapterGemini
+from mcphero import MCPToolAdapterGemini
 
 async def main():
     adapter = MCPToolAdapterGemini("https://api.mcphero.app/mcp/your-server-id")
@@ -117,37 +117,164 @@ async def main():
 asyncio.run(main())
 ```
 
+## Multiple MCP Servers
+
+Adapters natively support connecting to multiple MCP servers at once. Use `MCPServerConfig` to configure each server, then pass them as a list.
+
+### MCPServerConfig
+
+```python
+from mcphero import MCPServerConfig
+
+config = MCPServerConfig(
+    url="https://api.mcphero.app/mcp/your-server-id",  # required
+    name="weather",              # optional, auto-derived from URL if omitted
+    timeout=30.0,                # optional, default 30s
+    headers={                    # optional, auth headers for the server
+        "Authorization": "Bearer your-token",
+    },
+    init_mode="auto",            # "auto" | "on_fail" | "none"
+    tool_prefix="wx",            # optional, prefix for tool names from this server
+)
+```
+
+| Field | Type | Default | Description |
+|-------|------|---------|-------------|
+| `url` | `str` | *required* | HTTP endpoint of the MCP server |
+| `name` | `str \| None` | derived from URL | Identifier for the server (e.g. last path segment) |
+| `timeout` | `float` | `30.0` | Request timeout in seconds |
+| `headers` | `dict[str, str] \| None` | `None` | Headers sent with every request (useful for auth) |
+| `init_mode` | `"auto" \| "on_fail" \| "none"` | `"auto"` | When to run MCP initialization handshake |
+| `tool_prefix` | `str \| None` | `None` | Prefix applied to all tool names from this server |
+
+**`init_mode` options:**
+- `"auto"` - initialize the connection before every request (default, safest)
+- `"on_fail"` - skip initialization, but retry with initialization if a request fails
+- `"none"` - never initialize (for servers that don't require it)
+
+### Multi-Server Example
+
+```python
+import asyncio
+from openai import OpenAI
+from mcphero import MCPToolAdapterOpenAI, MCPServerConfig
+
+async def main():
+    adapter = MCPToolAdapterOpenAI([
+        MCPServerConfig(
+            url="https://api.mcphero.app/mcp/weather",
+            name="weather",
+            headers={"Authorization": "Bearer weather-token"},
+        ),
+        MCPServerConfig(
+            url="https://api.mcphero.app/mcp/calendar",
+            name="calendar",
+            headers={"Authorization": "Bearer calendar-token"},
+        ),
+    ])
+
+    client = OpenAI()
+
+    # Tools from ALL servers are fetched in parallel and merged
+    tools = await adapter.get_tool_definitions()
+
+    messages = [{"role": "user", "content": "What's the weather today and what's on my calendar?"}]
+    response = client.chat.completions.create(
+        model="gpt-4o",
+        messages=messages,
+        tools=tools,
+    )
+
+    # Tool calls are automatically routed to the correct server
+    if response.choices[0].message.tool_calls:
+        results = await adapter.process_tool_calls(
+            response.choices[0].message.tool_calls
+        )
+        messages.append(response.choices[0].message)
+        messages.extend(results)
+
+        final_response = client.chat.completions.create(
+            model="gpt-4o",
+            messages=messages,
+            tools=tools,
+        )
+        print(final_response.choices[0].message.content)
+
+asyncio.run(main())
+```
+
+### Tool Name Collisions
+
+When multiple servers expose tools with the same name, the adapter auto-prefixes them with the server name to avoid collisions:
+
+```python
+# Both servers have a "search" tool
+adapter = MCPToolAdapterOpenAI([
+    MCPServerConfig(url="https://example.com/mcp/weather", name="weather"),
+    MCPServerConfig(url="https://example.com/mcp/calendar", name="calendar"),
+])
+
+tools = await adapter.get_tool_definitions()
+# "search" becomes "weather__search" and "calendar__search"
+```
+
+You can control this behavior:
+
+```python
+# Custom separator
+adapter = MCPToolAdapterOpenAI(configs, prefix_separator="-")
+# "weather-search", "calendar-search"
+
+# Disable auto-prefixing (will raise on collision)
+adapter = MCPToolAdapterOpenAI(configs, auto_prefix_on_collision=False)
+
+# Manual prefix via config (always applied, regardless of collisions)
+MCPServerConfig(url="...", tool_prefix="wx")
+# "wx__search"
+```
+
 ## API Reference
 
 ### MCPToolAdapterOpenAI
 
 ```python
-from mcphero.adapters.openai import MCPToolAdapterOpenAI
+from mcphero import MCPToolAdapterOpenAI, MCPServerConfig
 
+# Single server (URL string)
+adapter = MCPToolAdapterOpenAI("https://api.mcphero.app/mcp/your-server-id")
+
+# Single server (config)
 adapter = MCPToolAdapterOpenAI(
-    base_url="https://api.mcphero.app/mcp/your-server-id",
-    timeout=30.0,  # optional
-    headers={"Authorization": "Bearer ..."},  # optional
+    MCPServerConfig(
+        url="https://api.mcphero.app/mcp/your-server-id",
+        headers={"Authorization": "Bearer ..."},
+    )
 )
+
+# Multiple servers
+adapter = MCPToolAdapterOpenAI([
+    MCPServerConfig(url="https://server-a.com/mcp", name="a"),
+    MCPServerConfig(url="https://server-b.com/mcp", name="b"),
+])
 ```
 
 #### Methods
 
 | Method | Returns | Description |
 |--------|---------|-------------|
-| `get_tool_definitions()` | `list[ChatCompletionToolParam]` | Fetch tools from MCP server as OpenAI tool schemas |
+| `get_tool_definitions()` | `list[ChatCompletionToolParam]` | Fetch tools from MCP server(s) as OpenAI tool schemas |
 | `process_tool_calls(tool_calls, return_errors=True)` | `list[ChatCompletionToolMessageParam]` | Execute tool calls and return results for the conversation |
+| `discover_tools()` | `list[MCPToolDefinition]` | Low-level: discover tools with routing metadata |
+| `call_tool(name, arguments)` | `JsonRpcResponse` | Low-level: call a single tool by name |
+| `initialize_all()` | `dict[str, JsonRpcResponse \| Exception]` | Pre-initialize all server connections |
 
 ### MCPToolAdapterGemini
 
 ```python
-from mcphero.adapters.gemini import MCPToolAdapterGemini
+from mcphero import MCPToolAdapterGemini, MCPServerConfig
 
-adapter = MCPToolAdapterGemini(
-    base_url="https://api.mcphero.app/mcp/your-server-id",
-    timeout=30.0,  # optional
-    headers={"Authorization": "Bearer ..."},  # optional
-)
+# Same constructor options as OpenAI adapter
+adapter = MCPToolAdapterGemini("https://api.mcphero.app/mcp/your-server-id")
 ```
 
 #### Methods
@@ -158,6 +285,8 @@ adapter = MCPToolAdapterGemini(
 | `get_tool()` | `types.Tool` | Fetch tools as a Gemini Tool object |
 | `process_function_calls(function_calls, return_errors=True)` | `list[types.Content]` | Execute function calls and return Content objects |
 | `process_function_calls_as_parts(function_calls, return_errors=True)` | `list[types.Part]` | Execute function calls and return Part objects |
+| `discover_tools()` | `list[MCPToolDefinition]` | Low-level: discover tools with routing metadata |
+| `call_tool(name, arguments)` | `JsonRpcResponse` | Low-level: call a single tool by name |
 
 ## Error Handling
 
