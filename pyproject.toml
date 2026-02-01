@@ -4,18 +4,18 @@ build-backend = "hatchling.build"
 
 [project]
 name = "mcphero"
-version = "0.2.1"
+version = "1.0.0"
 description = "Library to use MCP servers natively with AI clients as tools."
 readme = "README.md"
-requires-python = ">=3.9"
+requires-python = ">=3.11"
 classifiers = [
     "Development Status :: 3 - Alpha",
     "Programming Language :: Python",
     "Programming Language :: Python :: 3",
     "Programming Language :: Python :: 3 :: Only",
-    "Programming Language :: Python :: 3.9",
-    "Programming Language :: Python :: 3.10",
     "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
     "Programming Language :: Python :: Implementation :: CPython",
     "License :: OSI Approved :: MIT License",
     "Operating System :: OS Independent",
@@ -70,7 +70,6 @@ Website = "https://mcphero.app"
 [tool.pytest.ini_options]
 minversion = "7.0"
 asyncio_mode = "auto"
-timeout = 30
 addopts = "--strict-markers --strict-config -q -m 'not slow'"
 testpaths = ["tests"]
 markers = ["slow", "all", "benchmark"]

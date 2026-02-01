@@ -4,6 +4,13 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](http://keepachangelog.com/)
 and this project adheres to [Semantic Versioning](http://semver.org/).
 
+## [1.0.0] - 2026-02-02
+### Added
+- Support for multiple MCPServers per adapter - with name collision handling and parallel invocation
+- Github CI
+### Changed
+- Fully changed the API. There weren't any production users that we know of, so this breaking change is fine, no LTS for pre-1.0.0 version.
+### Fixed
 
 ## [0.2.1] - 2026-02-01
 
