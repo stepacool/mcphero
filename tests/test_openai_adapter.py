@@ -1,7 +1,6 @@
 import json
 
 import httpx
-import pytest
 import respx
 from openai.types.chat import ChatCompletionMessageToolCall
 from openai.types.chat.chat_completion_message_tool_call import Function
