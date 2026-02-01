@@ -1,12 +1,9 @@
-"""
-MCP Tool Adapter for OpenAI.
-
-This adapter converts remote MCP server tools to OpenAI-compatible tool definitions
-and processes OpenAI's tool calls to HTTP requests to the MCP server.
-"""
+# mcphero/adapters/openai.py
+"""MCP Tool Adapter for OpenAI."""
 
 from __future__ import annotations
 
+import asyncio
 import json
 
 import httpx
@@ -16,180 +13,92 @@ from openai.types.chat import (
     ChatCompletionToolParam,
 )
 
-from mcphero.adapters.base_adapter import BaseAdapter
+from mcphero.adapters.base_adapter import BaseAdapter, MCPToolDefinition
 
 
 class MCPToolAdapterOpenAI(BaseAdapter):
     """
-    Adapter that converts remote MCP server tools to OpenAI-compatible tool definitions.
-    Also converts OpenAI's tool_calls to HTTP requests to the MCP server.
-
+    Adapter for OpenAI. Supports single or multiple MCP servers.
+    
     Usage:
-
-        from openai import OpenAI
-        from mcphero import MCPToolAdapterOpenAI
-
-        adapter = MCPToolAdapterOpenAI("https://api.mcphero.app/mcp/your-server-id")
-        client = OpenAI()
-
-        # Get tool definitions
+        adapter = MCPToolAdapterOpenAI("https://mcp.example.com/server")
+        # or
+        adapter = MCPToolAdapterOpenAI([
+            MCPServerConfig(url="https://mcp.example.com/weather", name="weather"),
+            MCPServerConfig(url="https://mcp.example.com/calendar", name="calendar"),
+        ])
+        
         tools = await adapter.get_tool_definitions()
-
-        # Make request with tools
-        response = client.chat.completions.create(
-            model="gpt-4o",
-            messages=[{"role": "user", "content": "What's the weather?"}],
-            tools=tools,
-        )
-
-        # Process tool calls if present
+        response = client.chat.completions.create(model="gpt-4o", messages=messages, tools=tools)
+        
         if response.choices[0].message.tool_calls:
-            tool_results = await adapter.process_tool_calls(
-                response.choices[0].message.tool_calls
-            )
-
-            # Continue conversation with results
-            messages = [
-                {"role": "user", "content": "What's the weather?"},
-                response.choices[0].message,
-                *tool_results,
-            ]
-            final_response = client.chat.completions.create(
-                model="gpt-4o",
-                messages=messages,
-                tools=tools,
-            )
+            results = await adapter.process_tool_calls(response.choices[0].message.tool_calls)
     """
 
-    async def get_tool_definitions(self) -> list[ChatCompletionToolParam]:
-        """
-        Fetch tools from MCP server and convert them to OpenAI tool schemas.
+    @staticmethod
+    def _to_openai_tool(tool: MCPToolDefinition) -> ChatCompletionToolParam:
+        """Convert MCPToolDefinition to OpenAI format."""
+        return {
+            "type": "function",
+            "function": {
+                "name": tool.name,
+                "description": tool.description,
+                "parameters": tool.input_schema,
+            },
+        }
 
-        Returns:
-            List of tool definitions compatible with OpenAI's `tools` parameter.
-
-        Example:
-            tools = await adapter.get_tool_definitions()
-
-            response = client.chat.completions.create(
-                model="gpt-4o",
-                messages=messages,
-                tools=tools,
-            )
-        """
-        mcp_tools = await self.get_mcp_tools()
-
-        openai_tools: list[ChatCompletionToolParam] = []
-        for tool in mcp_tools["result"]["tools"]:
-            openai_tools.append(
-                {
-                    "type": "function",
-                    "function": {
-                        "name": tool["name"],
-                        "description": tool.get("description", ""),
-                        "parameters": tool.get(
-                            "inputSchema",
-                            {
-                                "type": "object",
-                                "properties": {},
-                            },
-                        ),
-                    },
-                }
-            )
-
-        return openai_tools
+    async def get_tool_definitions(self, *, parallel: bool = True) -> list[ChatCompletionToolParam]:
+        """Fetch tools and return OpenAI-compatible definitions."""
+        tools = await self.discover_tools(parallel=parallel)
+        return [self._to_openai_tool(t) for t in tools]
 
     async def process_tool_calls(
         self,
         tool_calls: list[ChatCompletionMessageToolCall],
+        *,
         return_errors: bool = True,
+        parallel: bool = True,
     ) -> list[ChatCompletionToolMessageParam]:
         """
-        Process OpenAI's tool_calls by invoking the tools via HTTP.
-
-        Args:
-            tool_calls: List of tool calls from `response.choices[0].message.tool_calls`.
-            return_errors: If True, include error messages for failed calls.
-                If False, failed calls are omitted from results.
-
-        Returns:
-            List of tool message dicts compatible with OpenAI's messages format.
-            Each result has `role="tool"`, `tool_call_id`, and `content`.
-
-        Example:
-            response = client.chat.completions.create(
-                model="gpt-4o",
-                messages=messages,
-                tools=tools,
-            )
-
-            if response.choices[0].message.tool_calls:
-                tool_results = await adapter.process_tool_calls(
-                    response.choices[0].message.tool_calls
-                )
-
-                # Add to conversation
-                messages.append(response.choices[0].message)
-                messages.extend(tool_results)
+        Process OpenAI tool calls, routing to appropriate servers.
         """
         if not tool_calls:
             return []
-        results: list[ChatCompletionToolMessageParam] = []
 
-        for tool_call in tool_calls:
-            tool_name = tool_call.function.name
-
+        async def execute_one(tc: ChatCompletionMessageToolCall) -> ChatCompletionToolMessageParam | None:
             try:
-                arguments = json.loads(tool_call.function.arguments)
+                arguments = json.loads(tc.function.arguments)
             except json.JSONDecodeError:
                 if return_errors:
-                    results.append(
-                        {
-                            "tool_call_id": tool_call.id,
-                            "role": "tool",
-                            "content": json.dumps(
-                                {"error": "Failed to parse tool arguments"}
-                            ),
-                        }
-                    )
-                continue
+                    result: ChatCompletionToolMessageParam =  {
+                        "tool_call_id": tc.id,
+                        "role": "tool",
+                        "content": json.dumps({"error": "Failed to parse arguments"}),
+                    }
+                    return result
+                return None
 
             try:
-                result = await self.call_mcp_tool(tool_name, arguments)
-
-                results.append(
-                    {
-                        "tool_call_id": tool_call.id,
+                response = await self.call_tool(tc.function.name, arguments)
+                content = json.dumps(response) if not isinstance(response, str) else response
+                result: ChatCompletionToolMessageParam = {
+                    "tool_call_id": tc.id,
+                    "role": "tool",
+                    "content": content,
+                }
+                return result
+            except (KeyError, httpx.HTTPError, Exception) as e:
+                if return_errors:
+                    result: ChatCompletionToolMessageParam =  {
+                        "tool_call_id": tc.id,
                         "role": "tool",
-                        "content": json.dumps(result)
-                        if not isinstance(result, str)
-                        else result,
+                        "content": json.dumps({"error": str(e)}),
                     }
-                )
+                    return result
+                return None
 
-            except httpx.HTTPError as e:
-                if return_errors:
-                    results.append(
-                        {
-                            "tool_call_id": tool_call.id,
-                            "role": "tool",
-                            "content": json.dumps(
-                                {"error": f"HTTP error calling tool: {str(e)}"}
-                            ),
-                        }
-                    )
-
-            except Exception as e:
-                if return_errors:
-                    results.append(
-                        {
-                            "tool_call_id": tool_call.id,
-                            "role": "tool",
-                            "content": json.dumps(
-                                {"error": f"Unexpected error: {str(e)}"}
-                            ),
-                        }
-                    )
-
-        return results
+        if parallel:
+            results = await asyncio.gather(*[execute_one(tc) for tc in tool_calls], return_exceptions=True)
+            return [r for r in results if r is not None and not isinstance(r, BaseException)]
+        else:
+            return [r for tc in tool_calls if (r := await execute_one(tc)) is not None]
