@@ -11,6 +11,7 @@ import uuid
 from dataclasses import dataclass, field
 from enum import Enum
 from typing import Any, Generic, TypedDict, TypeVar
+from urllib.parse import urlparse
 
 import httpx
 
@@ -72,7 +73,14 @@ class MCPServerConfig:
 
     def __post_init__(self):
         if self.name is None:
-            self.name = self.url.rstrip("/").split("/")[-1] or "server"
+            parsed = urlparse(self.url)
+            hostname = parsed.hostname or "unknown"
+            parts = hostname.split(".")
+            # Take the second-level domain part (e.g. "context7" from mcp.context7.com,
+            # "mcphero" from api.mcphero.app)
+            domain = parts[-2] if len(parts) >= 2 else hostname
+            path_part = parsed.path.rstrip("/").split("/")[-1] or "server"
+            self.name = f"{domain}_{path_part}"
         if isinstance(self.init_mode, str):
             self.init_mode = InitMode(self.init_mode)
 
@@ -275,12 +283,33 @@ class BaseAdapter(Generic[ToolCallT, ResultT]):
         self.prefix_separator = prefix_separator
 
         self._connections: dict[str, MCPConnection] = {}
-        for cfg in self._configs:
-            assert cfg.name is not None
-            self._connections[cfg.name] = MCPConnection(cfg)
+        self._prepare_connections()
         self._tool_map: dict[str, ToolMapping] = {}
         self._tools: list[MCPToolDefinition] = []
         self._discovered = False
+
+    def _prepare_connections(self):
+        seen_names: set[str] = set()
+        for cfg in self._configs:
+            assert cfg.name is not None
+            base_name = cfg.name
+            unique_name = base_name
+            counter = 1
+
+            while unique_name in seen_names:
+                if not self.auto_prefix_on_collision:
+                    raise ValueError(
+                        f"Duplicate server name '{base_name}'. "
+                        "Provide unique names explicitly or enable auto_prefix_on_collision."
+                    )
+                counter += 1
+                unique_name = f"{base_name}{self.prefix_separator}{counter}"
+
+            seen_names.add(unique_name)
+            if unique_name != base_name:
+                cfg.name = unique_name  # Keep config in sync for later look-ups
+
+            self._connections[unique_name] = MCPConnection(cfg)
 
     @property
     def is_multi_server(self) -> bool:
