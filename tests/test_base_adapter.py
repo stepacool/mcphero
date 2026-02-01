@@ -32,11 +32,11 @@ def _tools_response(tools):
 class TestMCPServerConfig:
     def test_auto_name_from_url(self):
         cfg = MCPServerConfig(url="https://example.com/mcp/weather")
-        assert cfg.name == "weather"
+        assert cfg.name == "example_weather"
 
     def test_auto_name_strips_trailing_slash(self):
         cfg = MCPServerConfig(url="https://example.com/mcp/weather/")
-        assert cfg.name == "weather"
+        assert cfg.name == "example_weather"
 
     def test_explicit_name(self):
         cfg = MCPServerConfig(url="https://example.com/x", name="my-srv")

@@ -70,7 +70,6 @@ Website = "https://mcphero.app"
 [tool.pytest.ini_options]
 minversion = "7.0"
 asyncio_mode = "auto"
-timeout = 30
 addopts = "--strict-markers --strict-config -q -m 'not slow'"
 testpaths = ["tests"]
 markers = ["slow", "all", "benchmark"]
