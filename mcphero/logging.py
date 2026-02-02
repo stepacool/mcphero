@@ -14,7 +14,7 @@ def get_logger(name: str, log_level: int, stream: "TextIO", fmt: str) -> logging
 
 
 logger = get_logger(
-    name="faststream",
+    name="mcphero",
     log_level=logging.INFO,
     stream=sys.stderr,
     fmt="%(asctime)s %(levelname)8s - %(message)s",
