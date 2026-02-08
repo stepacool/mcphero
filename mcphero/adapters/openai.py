@@ -37,8 +37,23 @@ class MCPToolAdapterOpenAI(
     """
 
     @staticmethod
-    def _to_openai_tool(tool: MCPToolDefinition) -> ChatCompletionToolParam:
+    def _to_openai_tool(
+        tool: MCPToolDefinition, *, strict: bool = True
+    ) -> ChatCompletionToolParam:
         """Convert MCPToolDefinition to OpenAI format."""
+        if strict:
+            return {
+                "type": "function",
+                "function": {
+                    "name": tool.name,
+                    "description": tool.description,
+                    "strict": True,
+                    "parameters": {
+                        **tool.input_schema,
+                        "additionalProperties": False,
+                    },
+                },
+            }
         return {
             "type": "function",
             "function": {
@@ -49,11 +64,11 @@ class MCPToolAdapterOpenAI(
         }
 
     async def get_tool_definitions(
-        self, *, parallel: bool = True
+        self, *, parallel: bool = True, strict: bool = True
     ) -> list[ChatCompletionToolParam]:
         """Fetch tools and return OpenAI-compatible definitions."""
         tools = await self.discover_tools(parallel=parallel)
-        return [self._to_openai_tool(t) for t in tools]
+        return [self._to_openai_tool(t, strict=strict) for t in tools]
 
     async def _execute_single_tool_call(
         self, tool_call: ChatCompletionMessageToolCall, *, return_errors: bool
