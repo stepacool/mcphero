@@ -32,7 +32,11 @@ class TestGetToolDefinitions:
             tools[0]["function"]["description"]
             == "Get the current weather for a location"
         )
-        assert tools[0]["function"]["parameters"] == sample_mcp_tools[0]["inputSchema"]
+        assert tools[0]["function"]["strict"] is True
+        assert tools[0]["function"]["parameters"] == {
+            **sample_mcp_tools[0]["inputSchema"],
+            "additionalProperties": False,
+        }
 
     @respx.mock
     async def test_handles_missing_input_schema(
@@ -51,7 +55,21 @@ class TestGetToolDefinitions:
         assert tools[0]["function"]["parameters"] == {
             "type": "object",
             "properties": {},
+            "additionalProperties": False,
         }
+
+    @respx.mock
+    async def test_strict_false_omits_strict_fields(self, base_url, sample_mcp_tools):
+        respx.post(base_url).mock(
+            return_value=httpx.Response(200, json=_tools_response(sample_mcp_tools))
+        )
+
+        adapter = MCPToolAdapterOpenAI(MCPServerConfig(url=base_url, init_mode="none"))
+        tools = await adapter.get_tool_definitions(strict=False)
+
+        assert tools[0]["function"]["parameters"] == sample_mcp_tools[0]["inputSchema"]
+        assert "strict" not in tools[0]["function"]
+        assert "additionalProperties" not in tools[0]["function"]["parameters"]
 
     @respx.mock
     async def test_handles_empty_tools(self, base_url):
