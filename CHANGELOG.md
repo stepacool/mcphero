@@ -4,6 +4,12 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](http://keepachangelog.com/)
 and this project adheres to [Semantic Versioning](http://semver.org/).
 
+## [2.0.0] - 2026-03-14
+### Added
+- Generic MCP Adapter with no dependencies on openai/gemini/etc.
+### Changed
+- Default install now doesn't install openai, thus the major version bump
+
 ## [1.0.0] - 2026-02-02
 ### Added
 - Support for multiple MCPServers per adapter - with name collision handling and parallel invocation
