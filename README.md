@@ -14,18 +14,54 @@ Two main flows:
 
 ## Installation
 
-OpenAI (default) support:
+Base (no LLM SDK dependency):
 ```bash
 pip install mcphero
 ```
 
-For Google Gemini support:
+For OpenAI support:
+```bash
+pip install "mcphero[openai]"
+```
 
+For Google Gemini support:
 ```bash
 pip install "mcphero[google-genai]"
 ```
 
 ## Quick Start
+
+### Generic (provider-agnostic)
+
+Use `MCPToolAdapter` when your framework has its own tool-call loop, or when you just need raw MCP tool execution without any LLM SDK dependency.
+
+```python
+import asyncio
+from mcphero import MCPToolAdapter, GenericToolCall
+
+async def main():
+    adapter = MCPToolAdapter("https://api.mcphero.app/mcp/your-server-id")
+
+    # Discover available tools
+    tools = await adapter.discover_tools()
+    for tool in tools:
+        print(tool.name, tool.description)
+
+    # Execute tool calls directly
+    results = await adapter.process_tool_calls([
+        GenericToolCall(name="get_weather", arguments={"city": "London"}, id="1"),
+    ])
+    for result in results:
+        print(result.content)
+
+asyncio.run(main())
+```
+
+Or call a single tool directly:
+
+```python
+result = await adapter.call_tool("get_weather", {"city": "London"})
+```
 
 ### OpenAI
 
@@ -235,6 +271,23 @@ MCPServerConfig(url="...", tool_prefix="wx")
 
 ## API Reference
 
+### MCPToolAdapter
+
+```python
+from mcphero import MCPToolAdapter, GenericToolCall
+
+adapter = MCPToolAdapter("https://api.mcphero.app/mcp/your-server-id")
+```
+
+#### Methods
+
+| Method | Returns | Description |
+|--------|---------|-------------|
+| `discover_tools()` | `list[MCPToolDefinition]` | Discover tools with routing metadata |
+| `process_tool_calls(tool_calls, return_errors=True)` | `list[GenericToolResult]` | Execute tool calls and return generic results |
+| `call_tool(name, arguments)` | `JsonRpcResponse` | Call a single tool by name |
+| `initialize_all()` | `dict[str, JsonRpcResponse \| Exception]` | Pre-initialize all server connections |
+
 ### MCPToolAdapterOpenAI
 
 ```python
@@ -290,7 +343,7 @@ adapter = MCPToolAdapterGemini("https://api.mcphero.app/mcp/your-server-id")
 
 ## Error Handling
 
-Both adapters handle errors gracefully. When `return_errors=True` (default), failed tool calls return error messages that can be sent back to the model:
+All adapters handle errors gracefully. When `return_errors=True` (default), failed tool calls return error messages that can be sent back to the model:
 
 ```python
 # Tool call fails -> returns error in result

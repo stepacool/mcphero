@@ -6,11 +6,17 @@ from __future__ import annotations
 import json
 
 import httpx
-from openai.types.chat import (
-    ChatCompletionMessageToolCall,
-    ChatCompletionToolMessageParam,
-    ChatCompletionToolParam,
-)
+
+try:
+    from openai.types.chat import (  # pyright: ignore[reportMissingImports]
+        ChatCompletionMessageToolCall,
+        ChatCompletionToolMessageParam,
+        ChatCompletionToolParam,
+    )
+except ImportError as e:
+    from mcphero.exceptions import INSTALL_OPENAI
+
+    raise ImportError(INSTALL_OPENAI) from e
 
 from mcphero.adapters.base_adapter import BaseAdapter, MCPToolDefinition
 
