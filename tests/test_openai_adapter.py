@@ -81,6 +81,19 @@ class TestGetToolDefinitions:
         tools = await adapter.get_tool_definitions()
         assert tools == []
 
+    @respx.mock
+    async def test_sanitizes_provider_unsafe_name(self, base_url):
+        respx.post(base_url).mock(
+            return_value=httpx.Response(
+                200, json=_tools_response([{"name": "name with spaces"}])
+            )
+        )
+
+        adapter = MCPToolAdapterOpenAI(MCPServerConfig(url=base_url, init_mode="none"))
+        tools = await adapter.get_tool_definitions()
+
+        assert tools[0]["function"]["name"] == "name_with_spaces"
+
 
 class TestProcessToolCalls:
     @respx.mock

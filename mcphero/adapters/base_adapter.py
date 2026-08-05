@@ -7,6 +7,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+import re
 import uuid
 from dataclasses import dataclass, field
 from enum import Enum
@@ -89,7 +90,7 @@ class MCPServerConfig:
 class MCPToolDefinition:
     """A discovered MCP tool with routing information."""
 
-    name: str  # The name exposed to the LLM (possibly prefixed)
+    name: str  # The provider-safe name exposed to the LLM (possibly prefixed)
     original_name: str  # The original name on the MCP server
     server_name: str  # Which server this tool belongs to
     description: str
@@ -107,6 +108,35 @@ class ToolMapping:
     original_name: str
     prefixed_name: str
     connection: MCPConnection
+
+
+_TOOL_NAME_MAX_LENGTH = 64
+_INVALID_TOOL_NAME_CHARS = re.compile(r"[^a-zA-Z0-9_-]")
+
+
+def _sanitize_tool_name(name: str) -> str:
+    """Return a provider-safe name while keeping it MCP-compatible."""
+    sanitized = _INVALID_TOOL_NAME_CHARS.sub("_", name)
+    if not sanitized:
+        sanitized = "_mcp_tool"
+    if not (sanitized[0].isalpha() or sanitized[0] == "_"):
+        sanitized = f"_{sanitized}"
+    return sanitized[:_TOOL_NAME_MAX_LENGTH]
+
+
+def _unique_tool_name(name: str, used_names: set[str]) -> str:
+    """Make a sanitized name unique without exceeding the provider limit."""
+    base_name = _sanitize_tool_name(name)
+    candidate = base_name
+    suffix = 2
+    while candidate in used_names:
+        suffix_text = f"_{suffix}"
+        candidate = (
+            f"{base_name[: _TOOL_NAME_MAX_LENGTH - len(suffix_text)]}{suffix_text}"
+        )
+        suffix += 1
+    used_names.add(candidate)
+    return candidate
 
 
 class MCPConnection:
@@ -262,7 +292,6 @@ class BaseAdapter(Generic[ToolCallT, ResultT]):
 
     Args:
         servers: Single URL/config or list of URLs/configs.
-        auto_prefix_on_collision: Auto-prefix tools when names collide across servers.
         prefix_separator: Separator for prefixed names (default: "__").
     """
 
@@ -270,7 +299,6 @@ class BaseAdapter(Generic[ToolCallT, ResultT]):
         self,
         servers: str | MCPServerConfig | list[str | MCPServerConfig],
         *,
-        auto_prefix_on_collision: bool = True,
         prefix_separator: str = "__",
     ):
         if isinstance(servers, (str, MCPServerConfig)):
@@ -279,7 +307,6 @@ class BaseAdapter(Generic[ToolCallT, ResultT]):
         self._configs: list[MCPServerConfig] = [
             MCPServerConfig(url=s) if isinstance(s, str) else s for s in servers
         ]
-        self.auto_prefix_on_collision = auto_prefix_on_collision
         self.prefix_separator = prefix_separator
 
         self._connections: dict[str, MCPConnection] = {}
@@ -297,11 +324,6 @@ class BaseAdapter(Generic[ToolCallT, ResultT]):
             counter = 1
 
             while unique_name in seen_names:
-                if not self.auto_prefix_on_collision:
-                    raise ValueError(
-                        f"Duplicate server name '{base_name}'. "
-                        "Provide unique names explicitly or enable auto_prefix_on_collision."
-                    )
                 counter += 1
                 unique_name = f"{base_name}{self.prefix_separator}{counter}"
 
@@ -330,52 +352,52 @@ class BaseAdapter(Generic[ToolCallT, ResultT]):
     def _resolve_tools(
         self, tools_by_server: dict[str, list[RawMCPTool]]
     ) -> list[MCPToolDefinition]:
-        """Resolve naming collisions and build typed tool definitions."""
-        # Find collisions
-        tool_sources: dict[str, list[str]] = {}
+        """Resolve naming collisions and build provider-safe tool definitions."""
+        tool_sources: dict[str, set[str]] = {}
+
         for server_name, tools in tools_by_server.items():
             config = next(c for c in self._configs if c.name == server_name)
             for tool in tools:
-                name = self._make_prefixed_name(config.tool_prefix, tool["name"])
-                tool_sources.setdefault(name, []).append(server_name)
+                base_name = self._make_prefixed_name(config.tool_prefix, tool["name"])
+                tool_sources.setdefault(base_name, set()).add(server_name)
 
-        collisions = {
+        colliding_names = {
             name for name, sources in tool_sources.items() if len(sources) > 1
         }
 
-        # Build definitions
         definitions: list[MCPToolDefinition] = []
         self._tool_map.clear()
+        used_names: set[str] = set()
 
         for server_name, tools in tools_by_server.items():
             config = next(c for c in self._configs if c.name == server_name)
-            conn = self._connections[server_name]
-
             for tool in tools:
                 base_name = self._make_prefixed_name(config.tool_prefix, tool["name"])
-
-                if base_name in collisions and self.auto_prefix_on_collision:
-                    final_name = f"{server_name}{self.prefix_separator}{tool['name']}"
-                else:
-                    final_name = base_name
-
-                definition = MCPToolDefinition(
-                    name=final_name,
-                    original_name=tool["name"],
-                    server_name=server_name,
-                    description=tool.get("description", ""),
-                    input_schema=tool.get(
-                        "inputSchema", {"type": "object", "properties": {}}
-                    ),
-                    raw=tool,
+                candidate_name = (
+                    self._make_prefixed_name(server_name, tool["name"])
+                    if base_name in colliding_names
+                    else base_name
                 )
-                definitions.append(definition)
+                final_name = _unique_tool_name(candidate_name, used_names)
+
+                definitions.append(
+                    MCPToolDefinition(
+                        name=final_name,
+                        original_name=tool["name"],
+                        server_name=server_name,
+                        description=tool.get("description", ""),
+                        input_schema=tool.get(
+                            "inputSchema", {"type": "object", "properties": {}}
+                        ),
+                        raw=tool,
+                    )
+                )
 
                 self._tool_map[final_name] = ToolMapping(
                     server_name=server_name,
                     original_name=tool["name"],
                     prefixed_name=final_name,
-                    connection=conn,
+                    connection=self._connections[server_name],
                 )
 
         return definitions
@@ -402,7 +424,7 @@ class BaseAdapter(Generic[ToolCallT, ResultT]):
                     name, tools = result
                     tools_by_server[name] = tools
         else:
-            tools_by_server = {}
+            tools_by_server: dict[str, list[RawMCPTool]] = {}
             for name, conn in self._connections.items():
                 try:
                     tools_by_server[name] = await conn.get_tools()
