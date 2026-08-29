@@ -4,6 +4,11 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](http://keepachangelog.com/)
 and this project adheres to [Semantic Versioning](http://semver.org/).
 
+## [2.0.1] - 2026-08-05
+### Changed
+- Normalize LLM-facing tool names to the OpenRouter-compatible character set, first-character rule, and 64-character limit while preserving original MCP names for calls.
+- Always namespace colliding server/tool names; removed the unsafe collision-prefix opt-out.
+
 ## [2.0.0] - 2026-03-14
 ### Added
 - Generic MCP Adapter with no dependencies on openai/gemini/etc.

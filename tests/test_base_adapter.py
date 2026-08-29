@@ -605,6 +605,20 @@ class TestBaseAdapterConstruction:
         assert "weather" in adapter._connections
         assert "calendar" in adapter._connections
 
+    def test_duplicate_server_names_are_always_namespaced(self):
+        adapter = BaseAdapter(
+            [
+                MCPServerConfig(url="https://a.com/weather", name="weather"),
+                MCPServerConfig(url="https://b.com/calendar", name="weather"),
+            ]
+        )
+
+        assert set(adapter._connections) == {"weather", "weather__2"}
+        assert [config.name for config in adapter._configs] == [
+            "weather",
+            "weather__2",
+        ]
+
     def test_tools_raises_before_discovery(self, base_url):
         adapter = BaseAdapter(base_url)
         with pytest.raises(RuntimeError, match="Must call discover_tools"):
@@ -698,38 +712,101 @@ class TestDiscoverTools:
         assert names == {"weather__search", "calendar__search"}
 
     @respx.mock
-    async def test_multi_server_collision_disabled(self):
+    async def test_sanitizes_tool_names(self):
+        url = "https://a.com/mcp/weather"
+        raw_names = [
+            "-search",
+            "name with spaces",
+            "admin.tools.list",
+            "x/y",
+            "a" * 140,
+            "a/b",
+            "a_b",
+        ]
+        respx.post(url).mock(
+            return_value=httpx.Response(
+                200,
+                json=_tools_response([{"name": name} for name in raw_names]),
+            )
+        )
+
+        adapter = BaseAdapter(
+            MCPServerConfig(url=url, name="weather", init_mode="none")
+        )
+        tools = await adapter.discover_tools()
+
+        assert [tool.name for tool in tools] == [
+            "_-search",
+            "name_with_spaces",
+            "admin_tools_list",
+            "x_y",
+            "a" * 64,
+            "a_b",
+            "a_b_2",
+        ]
+        assert [tool.original_name for tool in tools] == raw_names
+
+    @respx.mock
+    async def test_prefix_collisions_get_unique_names(self):
         url_a = "https://a.com/mcp/weather"
         url_b = "https://b.com/mcp/calendar"
-
-        respx.post(url_a).mock(
-            return_value=httpx.Response(
-                200,
-                json=_tools_response(
-                    [{"name": "search", "description": "Search weather"}]
-                ),
+        url_c = "https://c.com/mcp/other"
+        for url, tool_name in [
+            (url_a, "search"),
+            (url_b, "search"),
+            (url_c, "weather__search"),
+        ]:
+            respx.post(url).mock(
+                return_value=httpx.Response(
+                    200, json=_tools_response([{"name": tool_name}])
+                )
             )
-        )
-        respx.post(url_b).mock(
-            return_value=httpx.Response(
-                200,
-                json=_tools_response(
-                    [{"name": "search", "description": "Search events"}]
-                ),
-            )
-        )
 
         adapter = BaseAdapter(
             [
                 MCPServerConfig(url=url_a, name="weather", init_mode="none"),
                 MCPServerConfig(url=url_b, name="calendar", init_mode="none"),
-            ],
-            auto_prefix_on_collision=False,
+                MCPServerConfig(url=url_c, name="other", init_mode="none"),
+            ]
         )
-        tools = await adapter.discover_tools()
+        tools = await adapter.discover_tools(parallel=False)
 
-        names = [t.name for t in tools]
-        assert names.count("search") == 2
+        assert [tool.name for tool in tools] == [
+            "weather__search",
+            "calendar__search",
+            "weather__search_2",
+        ]
+        assert [tool.original_name for tool in tools] == [
+            "search",
+            "search",
+            "weather__search",
+        ]
+
+    @respx.mock
+    async def test_sanitized_name_routes_to_original_mcp_name(self):
+        url = "https://a.com/mcp/weather"
+        route = respx.post(url).mock(
+            side_effect=[
+                httpx.Response(
+                    200,
+                    json=_tools_response([{"name": "name with spaces"}]),
+                ),
+                httpx.Response(
+                    200,
+                    json={"jsonrpc": "2.0", "id": "2", "result": {"ok": True}},
+                ),
+            ]
+        )
+
+        adapter = BaseAdapter(
+            MCPServerConfig(url=url, name="weather", init_mode="none")
+        )
+        await adapter.discover_tools()
+        result = await adapter.call_tool("name_with_spaces", {})
+
+        assert result["result"]["ok"] is True
+        payload = json.loads(route.calls[1].request.content)
+        assert payload["params"]["name"] == "name with spaces"
 
     @respx.mock
     async def test_tool_prefix(self):
@@ -767,7 +844,7 @@ class TestDiscoverTools:
         )
         tools = await adapter.discover_tools()
 
-        assert tools[0].name == "wx.search"
+        assert tools[0].name == "wx_search"
 
 
 # ── BaseAdapter: call_tool ───────────────────────────────────────

@@ -254,6 +254,8 @@ tools = await adapter.get_tool_definitions()
 # "search" becomes "weather__search" and "calendar__search"
 ```
 
+Tool names exposed to the LLM are normalized by default. Names use the OpenRouter-compatible ASCII letters, digits, underscores, and hyphens; they start with a letter or underscore, are limited to 64 characters, and are made unique after normalization. The original MCP name is retained for the `tools/call` request.
+
 You can control this behavior:
 
 ```python
@@ -261,13 +263,12 @@ You can control this behavior:
 adapter = MCPToolAdapterOpenAI(configs, prefix_separator="-")
 # "weather-search", "calendar-search"
 
-# Disable auto-prefixing (will raise on collision)
-adapter = MCPToolAdapterOpenAI(configs, auto_prefix_on_collision=False)
-
 # Manual prefix via config (always applied, regardless of collisions)
 MCPServerConfig(url="...", tool_prefix="wx")
 # "wx__search"
 ```
+
+Collision prefixing is always enabled so the LLM never receives duplicate function names. There is no opt-out because duplicate provider names cannot be routed safely.
 
 ## API Reference
 
